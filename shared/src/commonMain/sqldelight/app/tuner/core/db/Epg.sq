@@ -11,6 +11,7 @@ CREATE TABLE programme (
 );
 CREATE INDEX programme_key_start ON programme(epg_key, start);
 CREATE INDEX programme_source ON programme(source_id);
+CREATE INDEX programme_start ON programme(start);
 
 CREATE TABLE epg_channel (
   source_id INTEGER NOT NULL,
@@ -56,11 +57,20 @@ nextProgrammes:
 SELECT * FROM programme WHERE epg_key = ? AND stop > :now ORDER BY start LIMIT :limit;
 
 searchProgrammes:
-SELECT p.*, ch.id AS channel_id, ch.name AS channel_name, ch.logo AS channel_logo
-FROM programme p
-JOIN channel ch ON ch.epg_key = p.epg_key
-JOIN source s ON s.id = ch.source_id AND s.enabled = 1
-WHERE p.title LIKE ('%' || :query || '%') AND p.stop > :from AND p.start < :to
+-- Programmes on air in [from, to): the start index bounds the scan (programmes are
+-- assumed to run under a day), and each hit picks one enabled channel via channel_epg
+-- instead of joining every channel that shares the guide id.
+SELECT p.source_id, p.epg_key, p.start, p.stop, p.title, p.description, p.category, p.icon, p.episode,
+       ch.id AS channel_id, ch.name AS channel_name, ch.logo AS channel_logo
+FROM (
+  SELECT pr.*, (
+    SELECT c.id FROM channel c JOIN source s ON s.id = c.source_id AND s.enabled = 1
+    WHERE c.epg_key = pr.epg_key LIMIT 1
+  ) AS cid
+  FROM programme pr
+  WHERE pr.start > :from - 86400000 AND pr.start < :to AND pr.stop > :from AND pr.title LIKE ('%' || :query || '%')
+) p
+JOIN channel ch ON ch.id = p.cid
 GROUP BY p.epg_key, p.start
 ORDER BY p.start
 LIMIT :limit;

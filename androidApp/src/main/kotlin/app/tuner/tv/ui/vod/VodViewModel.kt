@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.tuner.core.Cancellable
+import app.tuner.core.Changes
 import app.tuner.core.model.ContentKind
 import app.tuner.core.model.Group
 import app.tuner.core.model.GroupType
@@ -55,9 +56,16 @@ abstract class VodViewModel(private val kind: ContentKind) : ViewModel() {
     var lastOpenedId: String? = null
     private var endReached = false
     private var loadingMore = false
-    private val watcher: Cancellable = core.watchChanges { reload() }
+    // Fires once right away (the initial load), then on catalog, preference and progress changes.
+    private val watcher: Cancellable = core.watchChanges(Changes.CATALOG or Changes.PREFS or Changes.PROGRESS) { reload(it) }
 
     override fun onCleared() = watcher.cancel()
+
+    private fun reload(changes: Int) {
+        // Progress saves (every few seconds while watching) only affect Continue watching.
+        if (changes == Changes.PROGRESS && loaded && group?.id != "continue" && groups.any { it.id == "continue" }) return
+        reload()
+    }
 
     fun reload() {
         viewModelScope.launch {
@@ -78,12 +86,15 @@ abstract class VodViewModel(private val kind: ContentKind) : ViewModel() {
     }
 
     private suspend fun load(g: Group?) {
+        // Reloading the open group keeps every page already scrolled through, so a
+        // favorite toggle or sync doesn't throw the grid back to the first row.
+        val limit = if (g != null && g.id == group?.id) maxOf(PAGE, items.size) else PAGE
         group = g
         endReached = true // blocks loadMore until the first page is in
-        val page = fetch(g, 0)
+        val page = fetch(g, 0, limit)
         if (group?.id != g?.id) return
         items = page.distinctBy { it.id }
-        endReached = page.size < PAGE
+        endReached = page.size < limit
         loaded = true
     }
 
@@ -101,15 +112,15 @@ abstract class VodViewModel(private val kind: ContentKind) : ViewModel() {
         }
     }
 
-    private suspend fun fetch(g: Group?, offset: Int): List<VodItem> {
+    private suspend fun fetch(g: Group?, offset: Int, limit: Int = PAGE): List<VodItem> {
         g ?: return emptyList()
         return runCatching {
             when {
                 g.id == "continue" -> if (offset > 0) emptyList() else core.continueWatching(30)
                     .filter { if (kind == ContentKind.MOVIE) it.kind == ContentKind.MOVIE else it.kind == ContentKind.SERIES }
                     .map { VodItem.ResumeItem(it) }
-                kind == ContentKind.MOVIE -> core.movies(g, offset, PAGE).map { VodItem.MovieItem(it) }
-                else -> core.series(g, offset, PAGE).map { VodItem.SeriesItem(it) }
+                kind == ContentKind.MOVIE -> core.movies(g, offset, limit).map { VodItem.MovieItem(it) }
+                else -> core.series(g, offset, limit).map { VodItem.SeriesItem(it) }
             }
         }.getOrDefault(emptyList())
     }

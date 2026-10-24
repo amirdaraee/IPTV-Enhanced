@@ -66,7 +66,6 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf<VodItem?>(null) }
     var gate by remember { mutableStateOf<(() -> Unit)?>(null) }
-    LaunchedEffect(Unit) { if (!vm.loaded) vm.reload() }
 
     fun open(item: VodItem) {
         vm.lastOpenedId = item.id

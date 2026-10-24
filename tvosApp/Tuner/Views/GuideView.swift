@@ -23,9 +23,32 @@ final class GuideModel: ObservableObject {
     private var loadedFrom: Int64 = 0
     private var loadedTo: Int64 = 0
     private var requested = Set<Int64>()
-    private var pendingRows = Set<Int64>()
-    private var batchTask: Task<Void, Never>?
+    private var pendingRows: [Int64: Channel] = [:]
+    private var batchScheduled = false
+    private var subscription: Subscription?
     weak var app: AppModel?
+
+    /// Subscribes to the changes the guide shows; the first callback does the initial load.
+    func start(app: AppModel) {
+        guard self.app == nil else { return }
+        self.app = app
+        subscription = app.watch(Changes.catalog | Changes.prefs | Changes.history) { [weak self] mask in
+            Task { await self?.changed(mask) }
+        }
+    }
+
+    deinit { subscription?.cancel() }
+
+    private func changed(_ mask: Int32) async {
+        // Zapping only touches history: the open lineup is unaffected unless it is Recents,
+        // and the group list only needs refreshing for Recents to appear.
+        if mask == Changes.history {
+            if group?.type == .recents { await load(group, reset: false) }
+            else if !groups.contains(where: { $0.type == .recents }) { await reload() }
+            return
+        }
+        await reload()
+    }
 
     func reload() async {
         guard let core = app?.core else { return }
@@ -78,7 +101,15 @@ final class GuideModel: ObservableObject {
         let rows = channels.filter { requested.contains($0.id) }
         guard !rows.isEmpty else { return }
         let fresh = (try? await core.guide(channels: rows, from: loadedFrom, to: loadedTo)) ?? []
-        for r in fresh { programmes[r.channel.id] = r.programmes }
+        merge(fresh)
+    }
+
+    /// One assignment per batch, so the grid re-renders once rather than once per row.
+    private func merge(_ rows: [GuideRow]) {
+        guard !rows.isEmpty else { return }
+        var update = programmes
+        for r in rows { update[r.channel.id] = r.programmes }
+        programmes = update
     }
 
     /// Called as rows appear; batches the queries for rows scrolled into view.
@@ -92,17 +123,19 @@ final class GuideModel: ObservableObject {
         }
         guard !requested.contains(channel.id) else { return }
         requested.insert(channel.id)
-        pendingRows.insert(channel.id)
-        batchTask?.cancel()
-        batchTask = Task { @MainActor in
+        pendingRows[channel.id] = channel
+        guard !batchScheduled else { return }
+        batchScheduled = true
+        // Debounce without cancelling: a query already in flight must still deliver its rows.
+        Task { @MainActor in
             try? await Task.sleep(nanoseconds: 30_000_000)
-            guard !Task.isCancelled, let core = app?.core else { return }
-            let ids = pendingRows
-            pendingRows = []
-            let rows = channels.filter { ids.contains($0.id) }
+            let rows = Array(pendingRows.values)
+            pendingRows = [:]
+            batchScheduled = false
+            guard let core = app?.core, !rows.isEmpty else { return }
             let f = loadedFrom, t = loadedTo
             let fresh = (try? await core.guide(channels: rows, from: f, to: t)) ?? []
-            if f == loadedFrom { for r in fresh { programmes[r.channel.id] = r.programmes } }
+            if f == loadedFrom { merge(fresh) }
         }
     }
 
@@ -118,22 +151,26 @@ final class GuideModel: ObservableObject {
         return windowStart > minStart
     }
 
-    /// Visible segments for a row: programmes clipped to the window, with gaps between them.
     func segments(for channel: Channel) -> [GuideSegment] {
-        let windowEnd = windowStart + viewportMs
-        guard let list = programmes[channel.id] else { return [.gap(start: windowStart, width: viewportMs, label: "")] }
-        var out: [GuideSegment] = []
-        var cursor = windowStart
-        for p in list where p.stop > windowStart && p.start < windowEnd {
-            let s = max(p.start, windowStart), e = min(p.stop, windowEnd)
-            if s > cursor { out.append(.gap(start: cursor, width: s - cursor, label: "")) }
-            out.append(.programme(p, width: e - s))
-            cursor = e
-        }
-        if out.isEmpty { return [.gap(start: windowStart, width: viewportMs, label: "No information")] }
-        if cursor < windowEnd { out.append(.gap(start: cursor, width: windowEnd - cursor, label: "")) }
-        return out
+        guideSegments(programmes[channel.id], windowStart: windowStart)
     }
+}
+
+/// Visible segments for a row: programmes clipped to the window, with gaps between them.
+func guideSegments(_ programmes: [Programme]?, windowStart: Int64) -> [GuideSegment] {
+    let windowEnd = windowStart + viewportMs
+    guard let list = programmes else { return [.gap(start: windowStart, width: viewportMs, label: "")] }
+    var out: [GuideSegment] = []
+    var cursor = windowStart
+    for p in list where p.stop > windowStart && p.start < windowEnd {
+        let s = max(p.start, windowStart), e = min(p.stop, windowEnd)
+        if s > cursor { out.append(.gap(start: cursor, width: s - cursor, label: "")) }
+        out.append(.programme(p, width: e - s))
+        cursor = e
+    }
+    if out.isEmpty { return [.gap(start: windowStart, width: viewportMs, label: "No information")] }
+    if cursor < windowEnd { out.append(.gap(start: cursor, width: windowEnd - cursor, label: "")) }
+    return out
 }
 
 enum GuideSegment: Identifiable {
@@ -207,11 +244,7 @@ struct GuideView: View {
             refocus(first, at: Fmt.nowMs())
         }
         .onReceive(ticker) { _ in now = Fmt.nowMs() }
-        .task {
-            model.app = app
-            if !model.loaded { await model.reload() }
-        }
-        .onChange(of: app.version) { _, _ in Task { await model.reload() } }
+        .task { model.start(app: app) }
         .task(id: message) {
             guard message != nil else { return }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -245,10 +278,26 @@ struct GuideView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(model.channels, id: \.id) { ch in
-                        row(ch, msPerPoint: msPerPoint)
-                            .id(ch.id)
-                            .onAppear { model.ensureLoaded(ch) }
+                    // Identity by index keeps diffing cheap for 20k-channel lineups (no id
+                    // walk over every Kotlin object on each update), and equatable rows mean
+                    // a remote press only re-renders the rows whose focus actually changed.
+                    ForEach(0..<model.channels.count, id: \.self) { i in
+                        let ch = model.channels[i]
+                        GuideRowView(
+                            channel: ch,
+                            programmes: model.programmes[ch.id],
+                            windowStart: model.windowStart,
+                            msPerPoint: msPerPoint,
+                            now: now,
+                            focusedRow: model.focusedChannel?.id == ch.id,
+                            playing: engine.current?.channelId?.int64Value == ch.id,
+                            focus: $focus,
+                            activate: activate,
+                            menu: { ch, p in AnyView(channelMenu(ch, p)) }
+                        )
+                        .equatable()
+                        .id(ch.id)
+                        .onAppear { model.ensureLoaded(ch) }
                     }
                 }
                 .padding(.vertical, 12)
@@ -266,75 +315,6 @@ struct GuideView: View {
             Rectangle().fill(Palette.live.opacity(0.85)).frame(width: 3)
                 .offset(x: channelWidth + 8 + CGFloat(Double(now - model.windowStart) / msPerPoint))
                 .allowsHitTesting(false)
-        }
-    }
-
-    private func row(_ ch: Channel, msPerPoint: Double) -> some View {
-        let playing = engine.current?.channelId?.int64Value == ch.id
-        let focusedRow = model.focusedChannel?.id == ch.id
-        return HStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Text(verbatim: Fmt.number(ch.number)).font(.callout).foregroundStyle(playing ? Palette.accent : Palette.textDim)
-                    .lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
-                Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16)
-                    .frame(width: 70, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ch.name).font(.callout.weight(.medium)).lineLimit(1).foregroundStyle(playing ? Palette.accent : Palette.text)
-                    HStack(spacing: 6) {
-                        if ch.favorite { Text("★").foregroundStyle(Palette.warning) }
-                        if ch.hasCatchup { Image(systemName: "clock.arrow.circlepath").foregroundStyle(Palette.accent) }
-                        if ch.locked { Image(systemName: "lock.fill") }
-                    }
-                    .font(.caption2)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 16)
-            .frame(width: channelWidth - 8, height: rowHeight)
-            .background(focusedRow ? Palette.surfaceFocus : Palette.surface, in: RoundedRectangle(cornerRadius: 12))
-            .padding(.leading, 0)
-
-            // Invisible edge targets: reaching them scrolls the time window.
-            Color.clear.frame(width: 8, height: rowHeight).focusable().focused($focus, equals: .left(ch.id))
-
-            HStack(spacing: 0) {
-                ForEach(model.segments(for: ch)) { seg in
-                    segmentView(seg, channel: ch, msPerPoint: msPerPoint)
-                }
-            }
-            .frame(height: rowHeight)
-
-            Color.clear.frame(width: 4, height: rowHeight).focusable().focused($focus, equals: .right(ch.id))
-        }
-    }
-
-    @ViewBuilder
-    private func segmentView(_ seg: GuideSegment, channel: Channel, msPerPoint: Double) -> some View {
-        switch seg {
-        case let .programme(p, width):
-            let w = max(CGFloat(Double(width) / msPerPoint) - 4, 4)
-            Button { activate(channel, p) } label: {
-                ProgrammeCell(programme: p, channel: channel, now: now, width: w)
-            }
-            .buttonStyle(GuideCellStyle(live: p.isLive(now: now)))
-            .frame(width: w, height: rowHeight)
-            .padding(.trailing, 4)
-            .focused($focus, equals: .cell(channel.id, seg.id))
-            .contextMenu { channelMenu(channel, p) }
-        case let .gap(_, width, label):
-            let w = max(CGFloat(Double(width) / msPerPoint) - 4, 4)
-            if label.isEmpty && model.programmes[channel.id] != nil {
-                Color.clear.frame(width: w + 4, height: rowHeight)
-            } else {
-                Button { activate(channel, nil) } label: {
-                    GapLabel(text: label)
-                }
-                .buttonStyle(GuideCellStyle(live: false))
-                .frame(width: w, height: rowHeight)
-                .padding(.trailing, 4)
-                .focused($focus, equals: .cell(channel.id, seg.id))
-                .contextMenu { channelMenu(channel, nil) }
-            }
         }
     }
 
@@ -597,6 +577,93 @@ private struct GuideHeader: View {
         .padding(.horizontal, 40)
         .padding(.top, 20)
         .frame(height: 320)
+    }
+}
+
+/// One guide row. Equatable on the values it draws, so SwiftUI skips rows whose channel,
+/// programmes, focus highlight and time window are unchanged.
+private struct GuideRowView: View, Equatable {
+    let channel: Channel
+    let programmes: [Programme]?
+    let windowStart: Int64
+    let msPerPoint: Double
+    let now: Int64
+    let focusedRow: Bool
+    let playing: Bool
+    let focus: FocusState<GuideFocus?>.Binding
+    let activate: (Channel, Programme?) -> Void
+    let menu: (Channel, Programme?) -> AnyView
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.channel == b.channel && a.programmes == b.programmes && a.windowStart == b.windowStart
+            && a.msPerPoint == b.msPerPoint && a.now == b.now && a.focusedRow == b.focusedRow && a.playing == b.playing
+    }
+
+    var body: some View {
+        let ch = channel
+        HStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Text(verbatim: Fmt.number(ch.number)).font(.callout).foregroundStyle(playing ? Palette.accent : Palette.textDim)
+                    .lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
+                Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16)
+                    .frame(width: 70, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(ch.name).font(.callout.weight(.medium)).lineLimit(1).foregroundStyle(playing ? Palette.accent : Palette.text)
+                    HStack(spacing: 6) {
+                        if ch.favorite { Text("★").foregroundStyle(Palette.warning) }
+                        if ch.hasCatchup { Image(systemName: "clock.arrow.circlepath").foregroundStyle(Palette.accent) }
+                        if ch.locked { Image(systemName: "lock.fill") }
+                    }
+                    .font(.caption2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .frame(width: channelWidth - 8, height: rowHeight)
+            .background(focusedRow ? Palette.surfaceFocus : Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+
+            // Invisible edge targets: reaching them scrolls the time window.
+            Color.clear.frame(width: 8, height: rowHeight).focusable().focused(focus, equals: .left(ch.id))
+
+            HStack(spacing: 0) {
+                ForEach(guideSegments(programmes, windowStart: windowStart)) { seg in
+                    segmentView(seg)
+                }
+            }
+            .frame(height: rowHeight)
+
+            Color.clear.frame(width: 4, height: rowHeight).focusable().focused(focus, equals: .right(ch.id))
+        }
+    }
+
+    @ViewBuilder
+    private func segmentView(_ seg: GuideSegment) -> some View {
+        switch seg {
+        case let .programme(p, width):
+            let w = max(CGFloat(Double(width) / msPerPoint) - 4, 4)
+            Button { activate(channel, p) } label: {
+                ProgrammeCell(programme: p, channel: channel, now: now, width: w)
+            }
+            .buttonStyle(GuideCellStyle(live: p.isLive(now: now)))
+            .frame(width: w, height: rowHeight)
+            .padding(.trailing, 4)
+            .focused(focus, equals: .cell(channel.id, seg.id))
+            .contextMenu { menu(channel, p) }
+        case let .gap(_, width, label):
+            let w = max(CGFloat(Double(width) / msPerPoint) - 4, 4)
+            if label.isEmpty && programmes != nil {
+                Color.clear.frame(width: w + 4, height: rowHeight)
+            } else {
+                Button { activate(channel, nil) } label: {
+                    GapLabel(text: label)
+                }
+                .buttonStyle(GuideCellStyle(live: false))
+                .frame(width: w, height: rowHeight)
+                .padding(.trailing, 4)
+                .focused(focus, equals: .cell(channel.id, seg.id))
+                .contextMenu { menu(channel, nil) }
+            }
+        }
     }
 }
 

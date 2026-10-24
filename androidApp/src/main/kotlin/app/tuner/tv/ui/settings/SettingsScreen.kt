@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import app.tuner.core.Changes
 import app.tuner.core.model.Channel
 import app.tuner.core.model.ContentKind
 import app.tuner.core.model.Group
@@ -71,7 +72,7 @@ fun SettingsScreen(focusRequester: FocusRequester) {
     var hasPin by remember { mutableStateOf(core.hasPin()) }
 
     DisposableEffect(Unit) {
-        val a = core.watchChanges { scope.launch { sources = core.sources() } }
+        val a = core.watchChanges(Changes.CATALOG) { scope.launch { sources = core.sources() } }
         val b = core.watchSync { list -> syncStates = list.associateBy { it.sourceId } }
         onDispose { a.cancel(); b.cancel() }
     }

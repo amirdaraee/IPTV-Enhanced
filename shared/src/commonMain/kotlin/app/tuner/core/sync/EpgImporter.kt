@@ -114,6 +114,6 @@ internal class EpgImporter(private val db: TunerDatabase, private val http: Http
     }
 
     companion object {
-        const val BATCH = 2000
+        const val BATCH = 5_000
     }
 }

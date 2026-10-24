@@ -11,6 +11,8 @@ Android emulator can use http://10.0.2.2:8900 and the tvOS simulator http://loca
   /epg.xml.gz                   gzipped XMLTV covering now-2d .. now+3d
   /player_api.php               fake Xtream Codes API (any username/password except password "bad")
   /xmltv.php                    same XMLTV, uncompressed
+  username "big"                Xtream account at large-provider scale (21.7k channels, 103k movies,
+                                25k series, 200k programmes) for performance testing
   /live/<u>/<p>/<id>.m3u8|.ts   live channel as sliding-window HLS or continuous MPEG-TS
   /movie/<u>/<p>/<id>.mp4       VOD file (supports Range)
   /series/<u>/<p>/<id>.mp4      episode file
@@ -56,6 +58,61 @@ SERIES = {
     "901": ("Kitchen Wars", [(1, 1, "Heat"), (1, 2, "Salt")]),
 }
 SHOWS = ["Morning Brief", "Live Coverage", "Evening Edition", "Night Desk", "Documentary", "Match Day", "Highlights", "Movie Premiere", "Cartoon Block", "Quiz Night"]
+
+
+# ------------------------------------------------------------------ large provider (username "big")
+
+BIG_WORDS = ["News", "Sport", "The", "Movie", "France", "Kids", "Music", "World", "Drama", "Live", "Cinema", "Family"]
+BIG_EPG_CHANNELS = 2000
+_big_cache = {}
+
+
+def big_title(i):
+    return f"{BIG_WORDS[i % len(BIG_WORDS)]} {BIG_WORDS[(i // 7) % len(BIG_WORDS)]} {i}"
+
+
+def big(action):
+    """Catalogs at the scale of a large commercial provider, generated once and cached."""
+    if action in _big_cache:
+        return _big_cache[action]
+    if action == "get_live_categories":
+        out = [{"category_id": str(i), "category_name": f"LIVE {big_title(i)}"} for i in range(1, 301)]
+    elif action == "get_vod_categories":
+        out = [{"category_id": str(i), "category_name": f"VOD {big_title(i)}"} for i in range(1, 151)]
+    elif action == "get_series_categories":
+        out = [{"category_id": str(i), "category_name": f"SERIES {big_title(i)}"} for i in range(1, 81)]
+    elif action == "get_live_streams":
+        out = [{"num": i + 1, "name": f"{big_title(i)} HD", "stream_type": "live", "stream_id": i + 1, "stream_icon": "",
+                "epg_channel_id": f"big{i % BIG_EPG_CHANNELS}.test" if i % 10 < 9 else None, "added": "1700000000",
+                "category_id": str(i % 300 + 1), "tv_archive": 1 if i % 3 == 0 else 0, "tv_archive_duration": 2 if i % 3 == 0 else 0}
+               for i in range(21_700)]
+    elif action == "get_vod_streams":
+        out = [{"num": i + 1, "name": f"{big_title(i)} (20{i % 25:02d})", "stream_type": "movie", "stream_id": 100_000 + i, "stream_icon": "",
+                "rating": f"{i % 10}.5", "added": str(1700000000 + i), "category_id": str(i % 150 + 1), "container_extension": "mp4"}
+               for i in range(103_000)]
+    elif action == "get_series":
+        out = [{"num": i + 1, "name": big_title(i), "series_id": 900_000 + i, "cover": "", "plot": f"A plot about {big_title(i)}.",
+                "genre": "Drama", "releaseDate": "2020-01-01", "rating": "7", "category_id": str(i % 80 + 1), "last_modified": "1700000000"}
+               for i in range(25_000)]
+    elif action == "xmltv":
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        start, fmt = now - timedelta(hours=36), "%Y%m%d%H%M%S +0000"
+        parts = ['<?xml version="1.0" encoding="UTF-8"?>\n<tv generator-info-name="tuner-fixture-big">']
+        parts += [f'<channel id="big{c}.test"><display-name>{big_title(c)} HD</display-name></channel>' for c in range(BIG_EPG_CHANNELS)]
+        for c in range(BIG_EPG_CHANNELS):
+            t = start
+            for p in range(100):
+                e = t + timedelta(minutes=45)
+                parts.append(f'<programme start="{t.strftime(fmt)}" stop="{e.strftime(fmt)}" channel="big{c}.test"><title>{big_title(p * 31 + c)}</title>'
+                             f'<desc>Episode {p} of {big_title(c)}: a longer description with some text.</desc><category>Cat</category></programme>')
+                t = e
+        parts.append("</tv>")
+        _big_cache[action] = "\n".join(parts).encode()
+        return _big_cache[action]
+    else:
+        out = []
+    _big_cache[action] = json.dumps(out).encode()
+    return _big_cache[action]
 
 
 def segments(variant):
@@ -123,7 +180,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/epg.xml.gz":
                 return self.send(gzip.compress(xmltv_bytes()), "application/gzip")
             if path == "/xmltv.php":
-                return self.send(xmltv_bytes(), "application/xml")
+                return self.send(big("xmltv") if q.get("username") == "big" else xmltv_bytes(), "application/xml")
             if path == "/player_api.php":
                 return self.xtream(q)
             m = re.match(r"^/hls/(\d+)/live\.m3u8$", path)
@@ -136,7 +193,8 @@ class Handler(BaseHTTPRequestHandler):
             if m:
                 ch = next((c for c in CHANNELS if c["id"] == int(m.group(1))), None)
                 if not ch:
-                    return self.send("no such stream", "text/plain", 404)
+                    # Large-provider channels share the four test streams.
+                    ch = {"variant": int(m.group(1)) % 4}
                 if m.group(2) == "m3u8":
                     return self.live_playlist(ch["variant"])
                 return self.live_ts(ch["variant"])
@@ -255,6 +313,8 @@ class Handler(BaseHTTPRequestHandler):
         if q.get("password") == "bad":
             return j({"user_info": {"auth": 0}})
         action = q.get("action")
+        if q.get("username") == "big" and action not in (None, "get_vod_info", "get_series_info", "get_short_epg"):
+            return self.send(big(action), "application/json")
         if action is None:
             return j({
                 "user_info": {"username": q.get("username"), "auth": 1, "status": "Active", "exp_date": str(int(time.time()) + 86400 * 90),

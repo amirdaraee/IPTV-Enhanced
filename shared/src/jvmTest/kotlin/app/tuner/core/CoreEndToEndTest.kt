@@ -215,6 +215,40 @@ class CoreEndToEndTest {
     }
 
     @Test
+    fun changeNotificationsAreScoped() = runBlocking {
+        val core = core()
+        val id = core.addSource(SourceInput("Demo", SourceType.XTREAM, "demo.test:8080", "u", "p w"))
+        assertNull(core.refreshNow(id))
+        // addSource's own background sync may start after ours: wait until both are done.
+        assertNull(core.refreshNow(id))
+        while (core.sourcesSyncing()) Thread.sleep(20)
+        val lineup = mutableListOf<Int>()
+        val history = mutableListOf<Int>()
+        val a = core.watchChanges(Changes.CATALOG or Changes.PREFS) { lineup += it }
+        val b = core.watchChanges(Changes.HISTORY) { history += it }
+        assertEquals(listOf(Changes.CATALOG or Changes.PREFS), lineup, "initial callback carries every watched kind")
+        assertEquals(listOf(Changes.HISTORY), history)
+
+        val ch = core.channels(core.liveGroups(false).first { it.name == "News" }, false).single()
+        core.playChannel(ch)
+        assertEquals(1, lineup.size, "zapping must not reload lineups")
+        assertEquals(listOf(Changes.HISTORY, Changes.HISTORY), history)
+
+        core.setFavorite(ContentKind.LIVE, id, ch.key, true)
+        assertEquals(Changes.PREFS, lineup.last())
+        core.saveProgress(core.playMovie(core.movies(core.vodGroups(ContentKind.MOVIE, false).first { it.name == "Films" }, 0, 1).single()), 60_000, 600_000)
+        assertEquals(2, lineup.size, "progress saves are not lineup changes")
+        assertNull(core.refreshNow(id))
+        assertEquals(Changes.CATALOG, lineup.last())
+        a.cancel(); b.cancel()
+
+        // The rewritten guide search returns the programme with an enabled channel for it.
+        val hit = core.search("news").programmes.first()
+        assertEquals("news.one", hit.programme.channelEpgId)
+        assertEquals(ch.key, hit.channel.key)
+    }
+
+    @Test
     fun m3uWithHeaderEpg() = runBlocking {
         val core = core()
         val id = core.addSource(SourceInput("List", SourceType.M3U, "http://m3u.test/playlist.m3u"))

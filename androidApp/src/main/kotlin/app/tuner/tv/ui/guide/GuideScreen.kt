@@ -114,7 +114,6 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
     val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
-        if (!vm.loaded) vm.reload()
         while (true) {
             delay(30_000)
             now = System.currentTimeMillis()
@@ -427,7 +426,9 @@ private fun GuideGrid(
                             dpPerMs = dpPerMs,
                             now = now,
                             isFocusedRow = focused && index == vm.row,
-                            focusTime = vm.focusTime,
+                            // Only the focused row depends on the focus time, so moving
+                            // left/right recomposes one row instead of every visible row.
+                            focusTime = if (focused && index == vm.row) vm.focusTime else 0L,
                             playing = playerController.current?.channelId == ch.id,
                         )
                     }

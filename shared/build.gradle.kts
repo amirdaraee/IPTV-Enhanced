@@ -69,3 +69,8 @@ sqldelight {
         }
     }
 }
+
+// TEST_JFR=/path/rec.jfr records a Java Flight Recorder profile of the test JVM (see README, Performance).
+tasks.withType<Test>().configureEach {
+    System.getenv("TEST_JFR")?.let { jvmArgs("-XX:StartFlightRecording=filename=$it,settings=profile") }
+}

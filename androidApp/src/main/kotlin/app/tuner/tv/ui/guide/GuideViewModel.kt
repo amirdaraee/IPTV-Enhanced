@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.tuner.core.Cancellable
+import app.tuner.core.Changes
 import app.tuner.core.model.Channel
 import app.tuner.core.model.Group
 import app.tuner.core.model.GroupType
@@ -45,10 +46,22 @@ class GuideViewModel : ViewModel() {
     private var loadJob: Job? = null
 
     init {
-        watcher = core.watchChanges { reload() }
+        // Fires once right away (the initial load), then on lineup, preference and history changes.
+        watcher = core.watchChanges(Changes.CATALOG or Changes.PREFS or Changes.HISTORY) { reload(it) }
     }
 
     override fun onCleared() = watcher.cancel()
+
+    private fun reload(changes: Int) {
+        // Zapping only touches history: the open lineup is unaffected unless it is Recents,
+        // and the group list only needs refreshing for Recents to appear.
+        if (changes == Changes.HISTORY) {
+            if (group?.type == GroupType.RECENTS) viewModelScope.launch { loadGroup(group, resetFocus = false) }
+            else if (groups.none { it.type == GroupType.RECENTS }) reload()
+            return
+        }
+        reload()
+    }
 
     fun reload() {
         viewModelScope.launch {

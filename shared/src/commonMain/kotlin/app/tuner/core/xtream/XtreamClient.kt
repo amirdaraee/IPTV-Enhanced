@@ -376,7 +376,7 @@ class XtreamClient(
     companion object {
         private val THROTTLED = setOf(404, 429, 503)
         private val RETRY_DELAYS_MS = longArrayOf(2_000, 4_000)
-        private const val STREAM_BATCH = 500
+        private const val STREAM_BATCH = 2_000
 
         internal fun enc(s: String): String = buildString {
             for (b in s.encodeToByteArray()) {

@@ -130,9 +130,11 @@ fun Dim(text: String, modifier: Modifier = Modifier, maxLines: Int = 1) {
 /** Image with a generated fallback (initials over a gradient) for missing logos and posters. */
 @Composable
 fun Artwork(url: String?, title: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop, fontSize: Int = 18) {
-    Box(modifier.clip(RoundedCornerShape(8.dp)).background(placeholderBrush(title)), contentAlignment = Alignment.Center) {
+    val brush = remember(title) { placeholderBrush(title) }
+    val initials = remember(title) { initials(title) }
+    Box(modifier.clip(RoundedCornerShape(8.dp)).background(brush), contentAlignment = Alignment.Center) {
         Text(
-            initials(title),
+            initials,
             color = Color.White.copy(alpha = 0.85f),
             fontSize = fontSize.sp,
             fontWeight = FontWeight.Bold,
@@ -153,15 +155,13 @@ private fun initials(s: String): String {
     }
 }
 
-private fun placeholderBrush(seed: String): Brush {
-    val hues = listOf(
-        Color(0xFF1E3A5F) to Color(0xFF0F1B2D), Color(0xFF3B1F4A) to Color(0xFF1A0F24),
-        Color(0xFF1F4A3B) to Color(0xFF0F2419), Color(0xFF4A2F1F) to Color(0xFF24150F),
-        Color(0xFF2A2F55) to Color(0xFF12142A),
-    )
-    val (a, b) = hues[(seed.hashCode() and 0x7fffffff) % hues.size]
-    return Brush.linearGradient(listOf(a, b))
-}
+private val PLACEHOLDERS = listOf(
+    Color(0xFF1E3A5F) to Color(0xFF0F1B2D), Color(0xFF3B1F4A) to Color(0xFF1A0F24),
+    Color(0xFF1F4A3B) to Color(0xFF0F2419), Color(0xFF4A2F1F) to Color(0xFF24150F),
+    Color(0xFF2A2F55) to Color(0xFF12142A),
+).map { (a, b) -> Brush.linearGradient(listOf(a, b)) }
+
+private fun placeholderBrush(seed: String): Brush = PLACEHOLDERS[(seed.hashCode() and 0x7fffffff) % PLACEHOLDERS.size]
 
 @Composable
 fun ProgressBar(fraction: Float, modifier: Modifier = Modifier, color: Color = Palette.Accent, height: Dp = 3.dp) {

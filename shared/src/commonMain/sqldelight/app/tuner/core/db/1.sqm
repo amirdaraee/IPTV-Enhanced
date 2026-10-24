@@ -1,0 +1,3 @@
+-- v2: indexes for guide search (programme time window, channel lookup by guide id).
+CREATE INDEX IF NOT EXISTS channel_epg ON channel(epg_key);
+CREATE INDEX IF NOT EXISTS programme_start ON programme(start);

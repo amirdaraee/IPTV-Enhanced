@@ -17,7 +17,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.UnrecognizedInputFormatException
 import app.tuner.core.model.PlaybackRequest
 import app.tuner.core.platform.DEFAULT_USER_AGENT
+import okhttp3.OkHttpClient
 
 data class TrackOption(val label: String, val group: Int, val track: Int, val selected: Boolean)
 
@@ -35,7 +36,7 @@ data class TrackOption(val label: String, val group: Int, val track: Int, val se
  * extension turns out to be a playlist.
  */
 @OptIn(UnstableApi::class)
-class PlayerController(private val context: Context) {
+class PlayerController(private val context: Context, private val http: OkHttpClient) {
     private val handler = Handler(Looper.getMainLooper())
     private var retries = 0
     private var triedHls = false
@@ -95,12 +96,10 @@ class PlayerController(private val context: Context) {
         val headers = buildMap {
             request.referrer?.let { put("Referer", it) }
         }
-        val http = DefaultHttpDataSource.Factory()
+        // Timeouts and redirects (including http↔https) come from the shared client.
+        val dataSource = OkHttpDataSource.Factory(http)
             .setUserAgent(request.userAgent ?: DEFAULT_USER_AGENT)
             .setDefaultRequestProperties(headers)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
         val item = MediaItem.Builder()
             .setUri(Uri.parse(request.url))
             .setMediaMetadata(MediaMetadata.Builder().setTitle(request.title).setSubtitle(request.subtitle).build())
@@ -116,7 +115,7 @@ class PlayerController(private val context: Context) {
                 }
             }
             .build()
-        val source = DefaultMediaSourceFactory(http).createMediaSource(item)
+        val source = DefaultMediaSourceFactory(dataSource).createMediaSource(item)
         player.setMediaSource(source, if (request.startPositionMs > 0) request.startPositionMs else C.TIME_UNSET)
         player.prepare()
         player.playWhenReady = true

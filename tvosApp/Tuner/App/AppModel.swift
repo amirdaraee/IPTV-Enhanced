@@ -8,8 +8,6 @@ final class AppModel: ObservableObject {
     let player = PlayerEngine()
 
     @Published var hasSources: Bool?
-    /// Bumped whenever catalog data or preferences change; views reload on change.
-    @Published var version: Int64 = 0
     @Published var syncStates: [SyncState] = []
 
     private var subscriptions: [Subscription] = []
@@ -18,10 +16,13 @@ final class AppModel: ObservableObject {
         core = Tuner(context: PlatformContext())
         // AVPlayer can't play raw MPEG-TS, so Xtream live channels use HLS on tvOS.
         core.setPlatformDefaults(preferHlsLive: true)
-        subscriptions.append(core.watchChanges { [weak self] v in
-            Task { @MainActor in self?.version = v.int64Value }
-        })
         subscriptions.append(core.watchSync { [weak self] states in
+            #if DEBUG
+            // Phase transitions with timestamps in the device log, for timing syncs.
+            for s in states where s.phase != self?.syncStates.first(where: { $0.sourceId == s.sourceId })?.phase {
+                NSLog("[Tuner] sync %lld %@ %d", s.sourceId, s.phase, s.count)
+            }
+            #endif
             Task { @MainActor in self?.syncStates = states }
         })
         Task {
@@ -39,6 +40,10 @@ final class AppModel: ObservableObject {
     /// so real providers can be loaded into a simulator without typing on the on-screen keyboard.
     private func addDemoSourceIfRequested() async {
         let args = ProcessInfo.processInfo.arguments
+        // UI tests that need a first-run state pass `-resetData`.
+        if args.contains("-resetData") {
+            for s in (try? await core.sources()) ?? [] { try? await core.deleteSource(id: s.id) }
+        }
         func value(_ flag: String) -> String? {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
             return args[i + 1]
@@ -67,6 +72,35 @@ final class AppModel: ObservableObject {
     }
 
     var runningSync: SyncState? { syncStates.first { $0.running } }
+
+    /// Calls `handler` with the `Changes` bits (within `kinds`) that changed: once right away,
+    /// then after each change. Screens subscribe only to what they show, so zapping or saving
+    /// VOD progress doesn't reload the guide. Keep the returned subscription; cancel it when done.
+    func watch(_ kinds: Int32, _ handler: @escaping @MainActor (Int32) -> Void) -> Subscription {
+        core.watchChanges(kinds: kinds) { mask in
+            let bits = mask.int32Value
+            Task { @MainActor in handler(bits) }
+        }
+    }
+}
+
+extension AppModel {
+    /// `watch` as an async sequence for `.task { for await mask in app.changes(...) { ... } }`;
+    /// the subscription ends with the task (when the view disappears).
+    func changes(_ kinds: Int32) -> AsyncStream<Int32> {
+        AsyncStream { continuation in
+            let sub = watch(kinds) { continuation.yield($0) }
+            continuation.onTermination = { _ in sub.cancel() }
+        }
+    }
+}
+
+extension Changes {
+    static var catalog: Int32 { shared.CATALOG }
+    static var prefs: Int32 { shared.PREFS }
+    static var history: Int32 { shared.HISTORY }
+    static var progress: Int32 { shared.PROGRESS }
+    static var settings: Int32 { shared.SETTINGS }
 }
 
 extension Int64 {

@@ -281,7 +281,7 @@ internal class SourceSyncer(
     )
 
     companion object {
-        const val BATCH = 1000
+        const val BATCH = 2_000
         const val UNCATEGORIZED = "Uncategorized"
     }
 }

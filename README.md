@@ -95,7 +95,8 @@ xcodebuild -project Tuner.xcodeproj -scheme Tuner -destination 'platform=tvOS Si
 - a fake Xtream API (any username and password; the password `bad` fails);
 - real-time live HLS (ffmpeg loops test patterns);
 - raw MPEG-TS live streams;
-- MP4 VOD.
+- MP4 VOD;
+- a large-provider Xtream account (username `big`, any password): 21.7k channels, 103k movies, 25k series and 200k programmes, sharing the four test streams.
 
 ```sh
 tools/fixture-server/generate_media.sh      # once; needs ffmpeg
@@ -109,6 +110,7 @@ To connect:
 In a headless tvOS simulator (no audio device), start the server with `--no-audio`. AVPlayer can't start streams that carry audio there (CoreMedia error -66681); video-only streams play normally.
 
 Debug builds of the tvOS app accept these launch arguments for testing:
+- `-resetData` removes all sources first (first-run state).
 - `-demoXtream <server>` pre-adds the fixture Xtream account; `-demoUser`/`-demoPass` override its credentials and `-demoM3U <url>` adds a playlist.
 - `-debugPlay <url>` opens the system player on a URL; add `-debugLive` for live behaviour.
 - `-playerHUD` shows on-screen player diagnostics.
@@ -129,6 +131,34 @@ LIVE_M3U="https://provider.example/playlist.m3u" \
 LIVE_XTREAM="http://provider.example|user|pass" \
 ./gradlew :shared:jvmTest --tests '*LiveSourceTest*'
 ```
+
+## Performance
+
+The apps are built to stay smooth with very large providers:
+- **Targeted change notifications.** `watchChanges` takes a mask of `Changes` kinds, so each screen reloads only for changes it shows. Zapping (history) and VOD progress saves don't re-read a 20k-channel lineup.
+- **Indexed search.** Guide search scans only programmes in the requested time window, using a start-time index, and looks up one channel per guide id.
+- **Cheaper sync writes.**
+  - Rows are written in batches of 2,000 (programmes: 5,000).
+  - SQLite runs in WAL mode with `synchronous=NORMAL`.
+  - On tvOS, extra reader connections keep the UI responsive while a sync writes.
+- **Guide rendering.**
+  - On Android, only the focused row recomposes when you move left or right, and core models are declared stable to Compose.
+  - On tvOS, rows are equatable and the list is keyed by index, so a remote press re-renders just the rows whose focus changed.
+- **Artwork.**
+  - On Android, Coil uses a 256 MB disk cache.
+  - On tvOS, `ImagePipeline` adds memory and disk caches, request de-duplication and decoding downsampled to the drawn size.
+- **Zapping.**
+  - Channel changes closer together than 350 ms are coalesced, so only the channel you stop on is opened. Single-connection accounts aren't refused mid-zap.
+  - Android streams and artwork share one OkHttp connection pool.
+
+`BenchmarkTest` times sync and every screen's queries against a mock panel of the same size as the `big` fixture account:
+
+```sh
+BENCH_DB=/tmp/bench.db ./gradlew :shared:jvmTest --tests '*BenchmarkTest*'            # builds the DB on first run
+BENCH_DB=/tmp/bench.db BENCH_SYNC=1 ./gradlew :shared:jvmTest --tests '*BenchmarkTest*' # also times a full re-sync
+```
+
+Results are printed to the test report (`shared/build/test-results/jvmTest`). Set `TEST_JFR=/path/rec.jfr` to record a Java Flight Recorder profile of the test JVM.
 
 ## Icons
 

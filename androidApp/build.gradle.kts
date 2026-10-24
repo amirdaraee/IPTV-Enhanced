@@ -35,6 +35,10 @@ android {
     }
 }
 
+composeCompiler {
+    stabilityConfigurationFiles.add(layout.projectDirectory.file("compose-stability.conf"))
+}
+
 dependencies {
     implementation(project(":shared"))
     implementation(platform(libs.compose.bom))

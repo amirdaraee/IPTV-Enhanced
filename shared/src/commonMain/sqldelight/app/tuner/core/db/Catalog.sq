@@ -33,6 +33,7 @@ CREATE TABLE channel (
 CREATE INDEX channel_source ON channel(source_id, category_key, position);
 CREATE INDEX channel_key ON channel(source_id, ckey);
 CREATE INDEX channel_name ON channel(name_norm);
+CREATE INDEX channel_epg ON channel(epg_key);
 
 CREATE TABLE movie (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -234,8 +235,8 @@ FROM channel ch
 JOIN source s ON s.id = ch.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
 LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
-WHERE ch.name_norm LIKE ('%' || :query || '%') AND IFNULL(p.hidden, 0) = 0
-ORDER BY CASE WHEN ch.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(ch.name_norm)
+WHERE instr(ch.name_norm, :query) > 0 AND IFNULL(p.hidden, 0) = 0
+ORDER BY CASE WHEN instr(ch.name_norm, :query) = 1 THEN 0 ELSE 1 END, length(ch.name_norm)
 LIMIT :limit;
 
 channelCount:
@@ -306,8 +307,8 @@ FROM movie m
 JOIN source s ON s.id = m.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
 LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
-WHERE m.name_norm LIKE ('%' || :query || '%')
-ORDER BY CASE WHEN m.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(m.name_norm)
+WHERE instr(m.name_norm, :query) > 0
+ORDER BY CASE WHEN instr(m.name_norm, :query) = 1 THEN 0 ELSE 1 END, length(m.name_norm)
 LIMIT :limit;
 
 seriesInGroup:
@@ -341,8 +342,8 @@ FROM series se
 JOIN source s ON s.id = se.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
 LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
-WHERE se.name_norm LIKE ('%' || :query || '%')
-ORDER BY CASE WHEN se.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(se.name_norm)
+WHERE instr(se.name_norm, :query) > 0
+ORDER BY CASE WHEN instr(se.name_norm, :query) = 1 THEN 0 ELSE 1 END, length(se.name_norm)
 LIMIT :limit;
 
 countMovies:

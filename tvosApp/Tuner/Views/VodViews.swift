@@ -49,6 +49,12 @@ final class VodModel: ObservableObject {
         ChannelGroup(id: "continue", type: .recents, kind: kind, sourceId: 0, key: "", name: "Continue watching", sourceName: nil, hidden: false, locked: false)
     }
 
+    func changed(_ mask: Int32) async {
+        // Progress saves (every few seconds while watching) only affect Continue watching.
+        if mask == Changes.progress, loaded, group?.id != "continue", groups.contains(where: { $0.id == "continue" }) { return }
+        await reload()
+    }
+
     func reload() async {
         guard let core = app?.core else { return }
         let base = (try? await core.vodGroups(kind: kind, includeHidden: false)) ?? []
@@ -68,12 +74,15 @@ final class VodModel: ObservableObject {
     }
 
     private func load(_ g: ChannelGroup?) async {
+        // Reloading the open group keeps every page already scrolled through, so a
+        // favorite toggle or sync doesn't throw the grid back to the first row.
+        let limit = g != nil && g?.id == group?.id ? max(Self.page, Int32(items.count)) : Self.page
         group = g
         endReached = true
-        let page = await fetch(g, offset: 0)
+        let page = await fetch(g, offset: 0, limit: limit)
         guard group?.id == g?.id else { return }
         items = dedupe(page)
-        endReached = page.count < Self.page
+        endReached = page.count < limit
         loaded = true
     }
 
@@ -96,13 +105,13 @@ final class VodModel: ObservableObject {
         return list.filter { seen.insert($0.id).inserted }
     }
 
-    private func fetch(_ g: ChannelGroup?, offset: Int32) async -> [VodItem] {
+    private func fetch(_ g: ChannelGroup?, offset: Int32, limit: Int32 = page) async -> [VodItem] {
         guard let g, let core = app?.core else { return [] }
         if g.id == "continue" { return offset > 0 ? [] : await resumeItems() }
         if kind == .movie {
-            return ((try? await core.movies(group: g, offset: offset, limit: Self.page)) ?? []).map { .movie($0) }
+            return ((try? await core.movies(group: g, offset: offset, limit: limit)) ?? []).map { .movie($0) }
         }
-        return ((try? await core.series(group: g, offset: offset, limit: Self.page)) ?? []).map { .series($0) }
+        return ((try? await core.series(group: g, offset: offset, limit: limit)) ?? []).map { .series($0) }
     }
 }
 
@@ -170,9 +179,11 @@ struct VodBrowserView: View {
         }
         .task {
             model.app = app
-            if !model.loaded { await model.reload() }
+            // The first value arrives immediately and performs the initial load.
+            for await mask in app.changes(Changes.catalog | Changes.prefs | Changes.progress) {
+                await model.changed(mask)
+            }
         }
-        .onChange(of: app.version) { _, _ in Task { await model.reload() } }
         .fullScreenCover(item: Binding(get: { resumeRequest.map(IdentifiedRequest.init) }, set: { resumeRequest = $0?.request })) {
             VodPlayerView(request: $0.request)
         }
@@ -447,7 +458,7 @@ struct Backdrop: View {
     var body: some View {
         ZStack {
             if let url, let u = URL(string: url) {
-                AsyncImage(url: u) { $0.image?.resizable().aspectRatio(contentMode: .fill).opacity(0.35) }
+                CachedImage(url: u, maxPixels: 1920, contentMode: .fill).opacity(0.35)
             }
             LinearGradient(colors: [Palette.background, Palette.background.opacity(0.85), .clear], startPoint: .leading, endPoint: .trailing)
             LinearGradient(colors: [.clear, Palette.background], startPoint: .top, endPoint: .bottom)

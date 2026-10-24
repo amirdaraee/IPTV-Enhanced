@@ -21,6 +21,8 @@ struct Artwork: View {
     let title: String
     var contentMode: ContentMode = .fill
     var fontSize: CGFloat = 28
+    /// Decode size; logos (fit) are drawn small, posters and stills larger.
+    var maxPixels: Int?
 
     var body: some View {
         ZStack {
@@ -29,11 +31,7 @@ struct Artwork: View {
                 .font(.system(size: fontSize, weight: .bold))
                 .foregroundStyle(.white.opacity(0.85))
             if let url, !url.isEmpty, let u = URL(string: url) {
-                AsyncImage(url: u) { phase in
-                    if let image = phase.image {
-                        image.resizable().aspectRatio(contentMode: contentMode)
-                    }
-                }
+                CachedImage(url: u, maxPixels: maxPixels ?? (contentMode == .fit ? 256 : 720), contentMode: contentMode)
             }
         }
         .clipped()

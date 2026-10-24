@@ -34,7 +34,8 @@ struct LivePlayerView: View {
     @State private var fill = false
     @State private var infoTask: Task<Void, Never>?
     @State private var message: String?
-    @State private var listNowPlaying: [Int64: String] = [:]
+    @State private var tuneTask: Task<Void, Never>?
+    @State private var lastZap = Date.distantPast
     @FocusState private var focus: LiveFocus?
 
     enum LiveFocus: Hashable { case surface, channel(Int64) }
@@ -134,50 +135,10 @@ struct LivePlayerView: View {
     }
 
     private var channelList: some View {
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 6) {
-                    ForEach(Array(LiveLineup.channels.enumerated()), id: \.element.id) { idx, ch in
-                        Button {
-                            showList = false
-                            focus = .surface
-                            tune(ch, index: idx)
-                        } label: {
-                            HStack(spacing: 16) {
-                                Text(verbatim: Fmt.number(ch.number)).foregroundStyle(Palette.textDim).lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
-                                Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14)
-                                    .frame(width: 64, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(ch.name).lineLimit(1)
-                                    if let now = listNowPlaying[ch.id], !now.isEmpty {
-                                        Text(now).font(.caption).foregroundStyle(Palette.textDim).lineLimit(1)
-                                    }
-                                }
-                                Spacer()
-                                if ch.locked { Image(systemName: "lock.fill").font(.caption) }
-                            }
-                        }
-                        .buttonStyle(RowButtonStyle(selected: ch.id == channel?.id))
-                        .focused($focus, equals: .channel(ch.id))
-                        .id(ch.id)
-                        .task {
-                            if listNowPlaying[ch.id] == nil {
-                                listNowPlaying[ch.id] = ((try? await app.core.upcoming(channel: ch, limit: 1))?.first?.title) ?? ""
-                            }
-                        }
-                    }
-                }
-                .padding(20)
-            }
-            .frame(width: 640)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(LinearGradient(colors: [.black.opacity(0.95), .black.opacity(0.7), .clear], startPoint: .leading, endPoint: .trailing))
-            .onAppear {
-                if let id = channel?.id {
-                    proxy.scrollTo(id, anchor: .center)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focus = .channel(id) }
-                }
-            }
+        ChannelListPanel(current: channel, focus: $focus) { idx, ch in
+            showList = false
+            focus = .surface
+            tune(ch, index: idx)
         }
     }
 
@@ -195,12 +156,27 @@ struct LivePlayerView: View {
         let list = LiveLineup.channels
         guard !list.isEmpty else { return }
         let next = ((LiveLineup.index + delta) % list.count + list.count) % list.count
-        tune(list[next], index: next)
+        let rapid = Date().timeIntervalSince(lastZap) < Self.zapSettle * 2
+        lastZap = Date()
+        LiveLineup.index = next
+        tune(list[next], index: next, debounce: rapid)
     }
 
-    private func tune(_ ch: Channel, index: Int? = nil) {
+    /// Zaps closer together than this are coalesced into one tune.
+    private static let zapSettle: TimeInterval = 0.35
+
+    private func tune(_ ch: Channel, index: Int? = nil, debounce: Bool = false) {
         gate.run(app.core, locked: ch.locked, title: ch.name) {
-            Task {
+            tuneTask?.cancel()
+            tuneTask = Task {
+                // While the user is flicking through channels, only the one they stop on is
+                // opened: a single-connection account would otherwise be refused mid-zap.
+                if debounce {
+                    channel = ch
+                    flashInfo()
+                    try? await Task.sleep(nanoseconds: UInt64(Self.zapSettle * 1_000_000_000))
+                    guard !Task.isCancelled else { return }
+                }
                 do {
                     engine.play(try await app.core.playChannel(channel: ch))
                     LiveLineup.index = index ?? LiveLineup.channels.firstIndex { $0.id == ch.id } ?? LiveLineup.index
@@ -210,6 +186,81 @@ struct LivePlayerView: View {
                     message = error.localizedDescription
                 }
             }
+        }
+    }
+}
+
+/// The channel list overlay. Kept as its own view so loading "now playing" titles only
+/// re-renders the list, and titles are fetched in one guide query per batch of rows that
+/// scroll into view instead of one query per row.
+private struct ChannelListPanel: View {
+    let current: Channel?
+    let focus: FocusState<LivePlayerView.LiveFocus?>.Binding
+    let select: (Int, Channel) -> Void
+
+    @EnvironmentObject private var app: AppModel
+    @State private var nowPlaying: [Int64: String] = [:]
+    @State private var pending: [Int64: Channel] = [:]
+    @State private var batchScheduled = false
+
+    var body: some View {
+        let channels = LiveLineup.channels
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 6) {
+                    ForEach(0..<channels.count, id: \.self) { idx in
+                        let ch = channels[idx]
+                        Button { select(idx, ch) } label: {
+                            HStack(spacing: 16) {
+                                Text(verbatim: Fmt.number(ch.number)).foregroundStyle(Palette.textDim).lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
+                                Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14)
+                                    .frame(width: 64, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(ch.name).lineLimit(1)
+                                    if let now = nowPlaying[ch.id], !now.isEmpty {
+                                        Text(now).font(.caption).foregroundStyle(Palette.textDim).lineLimit(1)
+                                    }
+                                }
+                                Spacer()
+                                if ch.locked { Image(systemName: "lock.fill").font(.caption) }
+                            }
+                        }
+                        .buttonStyle(RowButtonStyle(selected: ch.id == current?.id))
+                        .focused(focus, equals: .channel(ch.id))
+                        .id(ch.id)
+                        .onAppear { request(ch) }
+                    }
+                }
+                .padding(20)
+            }
+            .frame(width: 640)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(LinearGradient(colors: [.black.opacity(0.95), .black.opacity(0.7), .clear], startPoint: .leading, endPoint: .trailing))
+            .onAppear {
+                if let id = current?.id {
+                    proxy.scrollTo(id, anchor: .center)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focus.wrappedValue = .channel(id) }
+                }
+            }
+        }
+    }
+
+    private func request(_ ch: Channel) {
+        guard nowPlaying[ch.id] == nil, pending[ch.id] == nil else { return }
+        pending[ch.id] = ch
+        guard !batchScheduled else { return }
+        batchScheduled = true
+        Task { @MainActor in
+            // Collect the rows appearing in this scroll step, then query them together.
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            let rows = Array(pending.values)
+            pending = [:]
+            batchScheduled = false
+            let now = Fmt.nowMs()
+            let guide = (try? await app.core.guide(channels: rows, from: now, to: now + 1)) ?? []
+            var update = nowPlaying
+            for r in guide { update[r.channel.id] = r.programmes.first?.title ?? "" }
+            nowPlaying = update
         }
     }
 }

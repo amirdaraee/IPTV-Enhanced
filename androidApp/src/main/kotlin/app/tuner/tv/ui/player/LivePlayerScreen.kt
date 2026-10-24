@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +83,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** Zaps closer together than this are coalesced into one tune. */
+private const val ZAP_SETTLE_MS = 350L
+
 private val RESIZE_MODES = listOf(
     AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
     AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Fill (crop)",
@@ -110,6 +114,8 @@ fun LivePlayerScreen() {
     var channel by remember { mutableStateOf(LiveSession.channel) }
     var nowNext by remember { mutableStateOf<List<Programme>>(emptyList()) }
     var infoJob by remember { mutableStateOf<Job?>(null) }
+    var tuneJob by remember { mutableStateOf<Job?>(null) }
+    var lastZap by remember { mutableStateOf(0L) }
     var longPressed by remember { mutableStateOf(false) }
     var resizeIndex by remember { mutableIntStateOf(0) }
     val listNowPlaying = remember { mutableStateMapOf<Long, String>() }
@@ -136,12 +142,19 @@ fun LivePlayerScreen() {
         flashInfo()
     }
 
-    fun tune(target: Channel, index: Int? = null) {
+    fun tune(target: Channel, index: Int? = null, debounce: Boolean = false) {
         if (!core.isAllowed(target.locked)) {
             pinFor = target
             return
         }
-        scope.launch {
+        tuneJob?.cancel()
+        tuneJob = scope.launch {
+            // While the user is flicking through channels, only the one they stop on is
+            // opened: a single-connection account would otherwise be refused mid-zap.
+            if (debounce) {
+                channel = target
+                delay(ZAP_SETTLE_MS)
+            }
             try {
                 val req = core.playChannel(target)
                 playerController.play(req)
@@ -159,7 +172,11 @@ fun LivePlayerScreen() {
         val list = LiveSession.channels
         if (list.isEmpty()) return
         val next = ((LiveSession.index + delta) % list.size + list.size) % list.size
-        tune(list[next], next)
+        val t = System.currentTimeMillis()
+        val rapid = t - lastZap < ZAP_SETTLE_MS * 2
+        lastZap = t
+        LiveSession.index = next
+        tune(list[next], next, debounce = rapid)
     }
 
     fun jumpToNumber(number: Int) {
@@ -179,12 +196,6 @@ fun LivePlayerScreen() {
         if (showList) {
             delay(50)
             runCatching { listFocus.requestFocus() }
-            // Fill in what's on now for the channel list, lazily.
-            LiveSession.channels.take(400).forEach { ch ->
-                if (ch.id !in listNowPlaying) {
-                    listNowPlaying[ch.id] = runCatching { core.upcoming(ch, 1).firstOrNull()?.title }.getOrNull() ?: ""
-                }
-            }
         } else {
             runCatching { rootFocus.requestFocus() }
         }
@@ -267,6 +278,19 @@ fun LivePlayerScreen() {
             ChannelListOverlay(
                 current = channel,
                 nowPlaying = listNowPlaying,
+                onVisible = { range ->
+                    // What's on now for rows scrolled into view: one guide query per screenful.
+                    val wanted = range.mapNotNull { LiveSession.channels.getOrNull(it) }.filter { it.id !in listNowPlaying }
+                    if (wanted.isNotEmpty()) {
+                        wanted.forEach { listNowPlaying[it.id] = "" }
+                        scope.launch {
+                            val now = System.currentTimeMillis()
+                            runCatching { core.guide(wanted, now, now + 1) }.getOrNull()?.forEach { row ->
+                                row.programmes.firstOrNull()?.let { listNowPlaying[row.channel.id] = it.title }
+                            }
+                        }
+                    }
+                },
                 focusRequester = listFocus,
                 onSelect = { idx, ch -> showList = false; tune(ch, idx) },
             )
@@ -361,12 +385,17 @@ private fun InfoBar(channel: Channel, nowNext: List<Programme>, isCatchup: Boole
 private fun ChannelListOverlay(
     current: Channel?,
     nowPlaying: Map<Long, String>,
+    onVisible: (IntRange) -> Unit,
     focusRequester: FocusRequester,
     onSelect: (Int, Channel) -> Unit,
 ) {
     val channels = LiveSession.channels
     val currentIndex = channels.indexOfFirst { it.id == current?.id }.coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (currentIndex - 4).coerceAtLeast(0))
+    LaunchedEffect(state) {
+        snapshotFlow { state.firstVisibleItemIndex to state.layoutInfo.visibleItemsInfo.size }
+            .collect { (first, count) -> onVisible(first..(first + count + 10)) }
+    }
     Box(Modifier.width(400.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.95f), Color.Black.copy(alpha = 0.75f))))) {
         LazyColumn(state = state, modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->

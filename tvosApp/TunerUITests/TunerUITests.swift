@@ -154,6 +154,7 @@ final class TunerUITests: XCTestCase {
     }
 
     func testOnboardingForm() {
+        app.launchArguments = ["-resetData"]
         app.launch()
         Thread.sleep(forTimeInterval: 3)
         shot("welcome")

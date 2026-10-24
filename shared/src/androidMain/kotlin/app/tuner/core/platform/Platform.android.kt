@@ -18,6 +18,8 @@ internal actual fun createDriver(context: PlatformContext): SqlDriver =
         callback = object : AndroidSqliteDriver.Callback(TunerDatabase.Schema) {
             override fun onConfigure(db: SupportSQLiteDatabase) {
                 db.enableWriteAheadLogging()
+                // Safe in WAL mode and avoids an fsync per batched sync commit.
+                db.query("PRAGMA synchronous = NORMAL").use { it.moveToFirst() }
             }
         },
     )

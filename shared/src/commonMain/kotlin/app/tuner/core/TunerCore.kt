@@ -66,6 +66,26 @@ fun interface Cancellable {
     fun cancel()
 }
 
+/**
+ * Kinds of change reported by [TunerCore.watchChanges], as bit flags. Screens listen only
+ * to what they show, so zapping (HISTORY) or VOD progress saves (PROGRESS) don't make
+ * the guide re-read twenty thousand channels.
+ */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("Changes", exact = true)
+object Changes {
+    /** Sources added, edited, removed or synced: lineups, groups, VOD and guide data. */
+    const val CATALOG = 1
+    /** Favorites, hidden and locked items or groups, group order. */
+    const val PREFS = 2
+    /** Recently watched channels and the last/previous channel. */
+    const val HISTORY = 4
+    /** Movie and episode watch progress (Continue watching). */
+    const val PROGRESS = 8
+    const val SETTINGS = 16
+    const val ALL = CATALOG or PREFS or HISTORY or PROGRESS or SETTINGS
+}
+
 /** Thrown by the play functions when content is parental-locked and the session is not unlocked. */
 class LockedException : Exception("This content is locked. Enter the parental PIN to continue.")
 
@@ -88,7 +108,8 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
     private val syncLocks = HashMap<Long, Mutex>()
     private val locksGuard = Mutex()
 
-    private val version = MutableStateFlow(0L)
+    /** One counter per [Changes] bit; observers diff successive snapshots. */
+    private val counters = MutableStateFlow(LongArray(KINDS))
     private val syncStates = MutableStateFlow<Map<Long, SyncState>>(emptyMap())
     private var sessionUnlocked = false
 
@@ -97,8 +118,25 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     // ------------------------------------------------------------------ observation
 
-    /** Called with a new number whenever catalog data or user preferences change. */
-    fun watchChanges(callback: (Long) -> Unit): Cancellable = observe(version, callback)
+    /**
+     * Calls [callback] with the [Changes] bits (within [kinds]) that changed since the
+     * previous call. The first call happens right away with all of [kinds] set, so a
+     * screen can load its initial data from the same callback.
+     */
+    fun watchChanges(kinds: Int, callback: (Int) -> Unit): Cancellable {
+        var last: LongArray? = null
+        val job: Job = scope.launch(callbackDispatcher) {
+            counters.collect { now ->
+                val prev = last
+                last = now
+                var mask = 0
+                for (i in 0 until KINDS) if (prev == null || prev[i] != now[i]) mask = mask or (1 shl i)
+                mask = mask and kinds
+                if (mask != 0) callback(mask)
+            }
+        }
+        return Cancellable { job.cancel() }
+    }
 
     /** Called with the state of every source that has synced during this session. */
     fun watchSync(callback: (List<SyncState>) -> Unit): Cancellable =
@@ -109,7 +147,9 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
         return Cancellable { job.cancel() }
     }
 
-    private fun changed() = version.update { it + 1 }
+    private fun changed(kinds: Int) = counters.update { old ->
+        LongArray(KINDS) { i -> if (kinds and (1 shl i) != 0) old[i] + 1 else old[i] }
+    }
 
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 
@@ -126,7 +166,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
             q.putSetting("autoplay_last", newSettings.autoplayLastChannel.toString())
             q.putSetting("prefer_hls", newSettings.preferHlsLive.toString())
         }
-        changed()
+        changed(Changes.SETTINGS)
     }
 
     private fun loadSettings(): Settings {
@@ -179,7 +219,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 db.sourceQueries.lastInsertId().executeAsOne()
             }
         }
-        changed()
+        changed(Changes.CATALOG)
         refresh(id)
         return id
     }
@@ -193,7 +233,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 input.epgOffsetMinutes.toLong(), input.refreshHours.toLong(), input.enabled.toLong(), id,
             )
         }
-        changed()
+        changed(Changes.CATALOG)
     }
 
     @Throws(Exception::class)
@@ -208,7 +248,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
             }
         }
         syncStates.update { it - id }
-        changed()
+        changed(Changes.ALL)
     }
 
     private fun normaliseUrl(input: SourceInput) =
@@ -250,7 +290,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
             report("Starting", 0)
             try {
                 withContext(Dispatchers.IO) { syncer.sync(source, ::report) }
-                changed()
+                changed(Changes.CATALOG)
                 val fresh = source(sourceId) ?: source
                 val now = nowMillis()
                 val guideError = try {
@@ -265,14 +305,14 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 io { db.sourceQueries.markRefreshed(nowMillis(), sourceId) }
                 guideError?.let { msg -> io { db.sourceQueries.markError(msg, sourceId) } }
                 report("Done", 0, running = false, error = guideError)
-                changed()
+                changed(Changes.CATALOG)
                 guideError
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 val msg = describe(e)
                 io { db.sourceQueries.markError(msg, sourceId) }
                 report("Failed", 0, running = false, error = msg)
-                changed()
+                changed(Changes.CATALOG)
                 msg
             }
         }
@@ -334,7 +374,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 }
             }
         }
-        changed()
+        changed(Changes.PREFS)
     }
 
     private suspend fun groupPref(group: Group, block: () -> Unit) {
@@ -345,7 +385,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 block()
             }
         }
-        changed()
+        changed(Changes.PREFS)
     }
 
     // ------------------------------------------------------------------ channels
@@ -419,7 +459,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 block()
             }
         }
-        changed()
+        changed(Changes.PREFS)
     }
 
     // ------------------------------------------------------------------ VOD
@@ -512,7 +552,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 q.trimRecent()
             }
         }
-        changed()
+        changed(Changes.HISTORY)
         return PlaybackRequest(
             channel.url, channel.name, null, channel.logo, channel.userAgent, channel.referrer,
             isLive = true, startPositionMs = 0, progressKey = null, progressParentKey = null,
@@ -586,7 +626,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
                 positionMs, durationMs, nowMillis(), request.progressParentKey,
             )
         }
-        changed()
+        changed(Changes.PROGRESS)
     }
 
     /**
@@ -620,7 +660,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
     @Throws(Exception::class)
     suspend fun clearProgress(key: String) {
         io { db.userQueries.deleteProgress(key) }
-        changed()
+        changed(Changes.PROGRESS)
     }
 
     private fun resumePosition(p: WatchProgress?): Long =
@@ -639,7 +679,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
         return io {
             val c = db.catalogQueries
             val now = nowMillis()
-            val programmes = db.epgQueries.searchProgrammes(query.trim(), now, now + DAY, 50) {
+            val programmes = db.epgQueries.searchProgrammes(from = now, to = now + DAY, query = query.trim(), limit = 50) {
                     _, key, start, stop, title, desc, cat, icon, ep, channelId, _, _ ->
                 channelId to Programme(key, start, stop, title, desc, cat, icon, ep)
             }.executeAsList().mapNotNull { (channelId, programme) ->
@@ -726,6 +766,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     companion object {
         const val DAY = 86_400_000L
+        private const val KINDS = 5
         private const val MAX_ALL = 20_000L
         private const val LAST_CHANNEL = "last_channel"
         private const val PREVIOUS_CHANNEL = "previous_channel"

@@ -53,8 +53,7 @@ struct SettingsView: View {
             .padding(.horizontal, 120)
             .padding(.vertical, 60)
         }
-        .task { reload() }
-        .onChange(of: app.version) { _, _ in reload() }
+        .task { for await _ in app.changes(Changes.catalog | Changes.settings) { reload() } }
         .fullScreenCover(item: $editing) { SourceEditView(sourceId: $0.id) }
         .confirmationDialog(sourceMenu?.name ?? "", isPresented: Binding(get: { sourceMenu != nil }, set: { if !$0 { sourceMenu = nil } }), presenting: sourceMenu) { s in
             Button("Refresh now") { app.core.refresh(sourceId: s.id) }
