@@ -36,7 +36,7 @@ final class AppModel: ObservableObject {
 
     #if DEBUG
     /// UI tests pass `-demoXtream <server>` to start with the local fixture server configured.
-    /// `-demoUser`/`-demoPass` override the fixture credentials and `-demoM3U <url>` adds a playlist,
+    /// `-demoName`/`-demoUser`/`-demoPass` override the fixture name and credentials and `-demoM3U <url>` adds a playlist,
     /// so real providers can be loaded into a simulator without typing on the on-screen keyboard.
     private func addDemoSourceIfRequested() async {
         let args = ProcessInfo.processInfo.arguments
@@ -51,7 +51,7 @@ final class AppModel: ObservableObject {
         guard (try? await core.hasSources())?.boolValue != true else { return }
         var inputs: [SourceInput] = []
         if let server = value("-demoXtream") {
-            inputs.append(SourceInput(name: "Demo", type: .xtream, url: server, username: value("-demoUser") ?? "demo",
+            inputs.append(SourceInput(name: value("-demoName") ?? "Demo", type: .xtream, url: server, username: value("-demoUser") ?? "demo",
                                       password: value("-demoPass") ?? "secret", epgUrls: [], userAgent: nil,
                                       epgOffsetMinutes: 0, refreshHours: 24, enabled: true))
         }

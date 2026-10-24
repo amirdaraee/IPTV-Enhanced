@@ -194,4 +194,39 @@ final class TunerUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shot("settings-parental")
     }
+
+    /// Sets up a real account and adds its news channels to Favorites, then opens Favorites.
+    /// Skipped unless LIVE_XTREAM="server|user|pass" is passed (TEST_RUNNER_LIVE_XTREAM via xcodebuild),
+    /// so credentials never live in the repo.
+    func testLiveAccountFavorites() throws {
+        let live = ProcessInfo.processInfo.environment["LIVE_XTREAM"]?.split(separator: "|").map(String.init) ?? []
+        try XCTSkipUnless(live.count == 3, "LIVE_XTREAM not set")
+        app.launchArguments = ["-demoXtream", live[0], "-demoUser", live[1], "-demoPass", live[2], "-demoName", "Provider"]
+        app.launch()
+        // The app shows a spinner until the first sync of the account finishes; a large
+        // provider takes minutes in a debug build.
+        Thread.sleep(forTimeInterval: 5)
+        let spinner = app.activityIndicators.firstMatch
+        let done = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: spinner)
+        wait(for: [done], timeout: 900)
+        Thread.sleep(forTimeInterval: 3)
+        shot("after-launch")
+        press(.up, wait: 1)
+        press(.right, 3, wait: 1.5)
+        press(.down, wait: 1.5)
+        type("news")
+        Thread.sleep(forTimeInterval: 1)
+        let addAll = app.buttons["Add all to Favorites"]
+        for _ in 0..<40 where !addAll.exists { Thread.sleep(forTimeInterval: 5) }
+        XCTAssertTrue(addAll.exists, "no channel results for 'news'")
+        press(.down, wait: 1)
+        for _ in 0..<6 where !addAll.hasFocus { press(.down, wait: 1) }
+        for _ in 0..<6 where !addAll.hasFocus { press(.left, wait: 0.6) }
+        shot("add-all-focused")
+        XCTAssertTrue(addAll.hasFocus)
+        press(.select, wait: 1)
+        shot("added")
+        let toast = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Added' OR label == 'Already in Favorites'")).firstMatch
+        XCTAssertTrue(toast.waitForExistence(timeout: 3))
+    }
 }

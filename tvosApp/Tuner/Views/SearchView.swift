@@ -8,6 +8,7 @@ struct SearchView: View {
     @State private var query = ""
     @State private var results: SearchResults?
     @State private var fullscreen = false
+    @State private var message: String?
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,10 @@ struct SearchView: View {
                         }
                         if !r.channels.isEmpty {
                             section("Channels") {
+                                Button { addAllToFavorites(r.channels) } label: {
+                                    Label("Add all to Favorites", systemImage: "star.fill")
+                                        .frame(width: 360, height: 48, alignment: .leading)
+                                }
                                 ForEach(r.channels, id: \.id) { ch in
                                     Button { play(ch, lineup: r.channels) } label: {
                                         HStack(spacing: 16) {
@@ -77,6 +82,19 @@ struct SearchView: View {
         }
         .fullScreenCover(isPresented: $fullscreen) { LivePlayerView(lineup: LiveLineup.channels) }
         .pinGate(gate)
+        .overlay(alignment: .bottom) { if let message { Toast(text: message).padding(.bottom, 40) } }
+        .task(id: message) {
+            guard message != nil else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            message = nil
+        }
+    }
+
+    private func addAllToFavorites(_ channels: [Channel]) {
+        Task {
+            let added = (try? await app.core.setFavorites(channels: channels, favorite: true))?.intValue ?? 0
+            message = added == 0 ? "Already in Favorites" : "Added \(added) channel\(added == 1 ? "" : "s") to Favorites"
+        }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

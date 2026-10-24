@@ -501,6 +501,13 @@ struct GuideView: View {
     @ViewBuilder
     private func groupMenu(_ g: ChannelGroup) -> some View {
         if g.type == .category {
+            Button("Add all to Favorites") {
+                Task {
+                    let list = (try? await app.core.channels(group: g, includeHidden: false)) ?? []
+                    let added = (try? await app.core.setFavorites(channels: list, favorite: true))?.intValue ?? 0
+                    message = added == 0 ? "Already in Favorites" : "Added \(added) channel\(added == 1 ? "" : "s") to Favorites"
+                }
+            }
             Button("Move up") { Task { try? await app.core.moveGroup(group: g, delta: -1) } }
             Button("Move down") { Task { try? await app.core.moveGroup(group: g, delta: 1) } }
             Button("Hide group") { Task { try? await app.core.setGroupHidden(group: g, hidden: true) } }
