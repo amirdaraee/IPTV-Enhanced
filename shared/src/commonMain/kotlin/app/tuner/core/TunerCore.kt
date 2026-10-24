@@ -86,6 +86,12 @@ object Changes {
     const val ALL = CATALOG or PREFS or HISTORY or PROGRESS or SETTINGS
 }
 
+/** Provider separator entries ("##### SPORTS #####", "===== UK ====="), which are not real channels. */
+internal fun isDivider(name: String): Boolean {
+    val t = name.trim()
+    return t.length >= 3 && t.take(3).all { it == '#' || it == '=' || it == '*' || it == '-' }
+}
+
 /** Thrown by the play functions when content is parental-locked and the session is not unlocked. */
 class LockedException : Exception("This content is locked. Enter the parental PIN to continue.")
 
@@ -440,6 +446,30 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
     @Throws(Exception::class)
     suspend fun setFavorite(kind: ContentKind, sourceId: Long, key: String, favorite: Boolean) = itemPref(kind, sourceId, key) {
         db.catalogQueries.setFavorite(favorite.toLong(), nowMillis(), sourceId, kind.name, key)
+    }
+
+    /**
+     * Adds (or removes) many channels at once, e.g. every search result or a whole group,
+     * in one transaction. Divider entries like "##### SPORTS #####" are skipped.
+     * Returns the number of channels changed.
+     */
+    @Throws(Exception::class)
+    suspend fun setFavorites(channels: List<Channel>, favorite: Boolean): Int {
+        val targets = channels.filter { !isDivider(it.name) && it.favorite != favorite }
+        if (targets.isEmpty()) return 0
+        io {
+            val q = db.catalogQueries
+            val now = nowMillis()
+            db.transaction {
+                targets.forEachIndexed { i, ch ->
+                    q.ensureItemPref(ch.sourceId, ContentKind.LIVE.name, ch.key)
+                    // Keep the order they were given in: Favorites sorts by time added.
+                    q.setFavorite(favorite.toLong(), now + i, ch.sourceId, ContentKind.LIVE.name, ch.key)
+                }
+            }
+        }
+        changed(Changes.PREFS)
+        return targets.size
     }
 
     @Throws(Exception::class)

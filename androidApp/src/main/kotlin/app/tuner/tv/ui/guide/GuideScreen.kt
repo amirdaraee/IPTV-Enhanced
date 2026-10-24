@@ -245,6 +245,12 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
             if (g.type == GroupType.CATEGORY) {
                 add(MenuAction("Move up") { scope.launch { core.moveGroup(g, -1) } })
                 add(MenuAction("Move down") { scope.launch { core.moveGroup(g, 1) } })
+                add(MenuAction("Add all to Favorites") {
+                    scope.launch {
+                        val n = runCatching { core.setFavorites(core.channels(g, false), true) }.getOrDefault(0)
+                        message = if (n == 0) "Already in Favorites" else "Added $n channels to Favorites"
+                    }
+                })
                 add(MenuAction("Hide group") { scope.launch { core.setGroupHidden(g, true) } })
                 if (core.hasPin()) add(MenuAction(if (g.locked) "Unlock group" else "Lock group") {
                     guarded(true, "Change lock") { scope.launch { core.setGroupLocked(g, !g.locked) } }

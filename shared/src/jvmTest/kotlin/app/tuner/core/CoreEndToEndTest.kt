@@ -242,6 +242,14 @@ class CoreEndToEndTest {
         assertEquals(Changes.CATALOG, lineup.last())
         a.cancel(); b.cancel()
 
+        // Bulk favorites: a whole group at once, dividers skipped, already-favorite ones untouched.
+        val all = core.channels(core.liveGroups(false).first { it.type == GroupType.ALL }, false)
+        val divider = all.first().copy(name = "##### SPORTS #####")
+        assertEquals(all.count { !it.favorite }, core.setFavorites(all + divider, true))
+        assertEquals(all.size, core.channels(core.liveGroups(false).first { it.type == GroupType.FAVORITES }, false).size)
+        assertEquals(0, core.setFavorites(core.channels(core.liveGroups(false).first { it.type == GroupType.ALL }, false), true))
+        assertTrue(isDivider("===== UK =====") && !isDivider("UK - Movies HD"))
+
         // The rewritten guide search returns the programme with an enabled channel for it.
         val hit = core.search("news").programmes.first()
         assertEquals("news.one", hit.programme.channelEpgId)

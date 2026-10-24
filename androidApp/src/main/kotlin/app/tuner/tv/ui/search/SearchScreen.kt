@@ -99,6 +99,23 @@ fun SearchScreen(focusRequester: FocusRequester) {
                     SectionTitle("Channels")
                     Spacer(Modifier.height(10.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
+                        item(key = "add-all") {
+                            FocusSurface(
+                                onClick = {
+                                    scope.launch {
+                                        val n = runCatching { core.setFavorites(r.channels, true) }.getOrDefault(0)
+                                        message = if (n == 0) "Already in Favorites" else "Added $n channel${if (n == 1) "" else "s"} to Favorites"
+                                    }
+                                },
+                                modifier = Modifier.width(200.dp),
+                            ) {
+                                Row(Modifier.padding(10.dp).height(34.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("★", color = Palette.Warning, style = MaterialTheme.typography.titleMedium)
+                                    Spacer(Modifier.width(10.dp))
+                                    Text("Add all to Favorites", style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                                }
+                            }
+                        }
                         items(r.channels, key = { it.id }) { ch ->
                             FocusSurface(onClick = { playChannel(ch, r.channels) }, modifier = Modifier.width(200.dp)) {
                                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
