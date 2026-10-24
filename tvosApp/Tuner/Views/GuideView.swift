@@ -167,6 +167,7 @@ struct GuideView: View {
     @State private var message: String?
     @State private var now = Fmt.nowMs()
     @State private var lastCellTime: Int64 = Fmt.nowMs()
+    @State private var previousFocus: GuideFocus?
 
     private let ticker = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
@@ -196,7 +197,15 @@ struct GuideView: View {
         .onExitCommand {
             if showGroups { closeGroups() } else { openGroups() }
         }
-        .onChange(of: focus) { _, f in handleFocus(f) }
+        .onChange(of: focus) { old, f in
+            previousFocus = old
+            handleFocus(f)
+        }
+        .onChange(of: model.channels.first?.id) { _, first in
+            // Open on the live programme of the first channel.
+            guard let first, !showGroups else { return }
+            refocus(first, at: Fmt.nowMs())
+        }
         .onReceive(ticker) { _ in now = Fmt.nowMs() }
         .task {
             model.app = app
@@ -368,25 +377,42 @@ struct GuideView: View {
             let list = model.programmes[chId] ?? []
             model.focusedProgramme = segId > 0 ? list.first { $0.start == segId } : nil
             if let p = model.focusedProgramme { lastCellTime = max(p.start, model.windowStart) }
-        case let .right(chId):
-            model.shiftWindow(by: hour)
-            refocus(chId, at: model.windowStart + viewportMs - hour)
-        case let .left(chId):
-            if model.canGoBack {
-                model.shiftWindow(by: -hour)
-                refocus(chId, at: model.windowStart + hour - 1)
-            } else {
-                openGroups()
+        case let .right(chId), let .left(chId):
+            // Edge targets only scroll time when reached by moving sideways from a cell in the
+            // same row; any other arrival (initial focus, vertical moves) goes to the live cell.
+            guard case let .cell(prevCh, _) = previousFocus, prevCh == chId else {
+                refocus(chId, at: max(lastCellTime, model.windowStart))
+                return
             }
+            if case .right = f { scrollRight(chId) } else { scrollLeft(chId) }
         default:
             break
         }
     }
 
+    private func scrollRight(_ chId: Int64) {
+        model.shiftWindow(by: hour)
+        refocus(chId, at: model.windowStart + viewportMs - hour)
+    }
+
+    private func scrollLeft(_ chId: Int64) {
+        if model.canGoBack {
+            model.shiftWindow(by: -hour)
+            refocus(chId, at: model.windowStart + hour - 1)
+        } else {
+            openGroups()
+        }
+    }
+
     /// After the window moves, put focus on the cell covering `time` in the same row.
-    private func refocus(_ chId: Int64, at time: Int64) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+    /// Retries briefly while the row's programmes are still loading.
+    private func refocus(_ chId: Int64, at time: Int64, attempt: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0.05 : 0.3)) {
             guard let ch = model.channels.first(where: { $0.id == chId }) else { return }
+            if model.programmes[chId] == nil, attempt < 6 {
+                refocus(chId, at: time, attempt: attempt + 1)
+                return
+            }
             let segs = model.segments(for: ch)
             let target = segs.first { seg in
                 switch seg {

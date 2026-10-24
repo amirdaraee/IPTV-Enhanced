@@ -142,10 +142,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.live_ts(ch["variant"])
             if re.match(r"^/(movie|series)/[^/]+/[^/]+/\d+\.\w+$", path):
                 return self.file(os.path.join(MEDIA, "movie.mp4"), "video/mp4")
-            m = re.match(r"^/timeshift/[^/]+/[^/]+/\d+/[^/]+/(\d+)\.ts$", path)
+            m = re.match(r"^/timeshift/[^/]+/[^/]+/\d+/[^/]+/(\d+)\.(ts|m3u8)$", path)
             if m:
                 ch = next((c for c in CHANNELS if c["id"] == int(m.group(1))), CHANNELS[0])
+                if m.group(2) == "m3u8":
+                    return self.archive_hls(ch["variant"])
                 return self.archive_ts(ch["variant"])
+            m = re.match(r"^/vod/(\d+)/(seg\d+\.ts)$", path)
+            if m:
+                return self.file(os.path.join(MEDIA, f"ch{m.group(1)}", m.group(2)), "video/mp2t")
             if path == "/":
                 return self.send(__doc__, "text/plain")
             return self.send("not found", "text/plain", 404)
@@ -172,8 +177,11 @@ class Handler(BaseHTTPRequestHandler):
         fp = os.path.join(LIVE, f"ch{variant}", "live.m3u8")
         if not os.path.exists(fp):
             return self.send("live stream not running (needs ffmpeg and generate_media.sh)", "text/plain", 503)
-        with open(fp, "rb") as f:
-            body = f.read()
+        with open(fp, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        # Segment URIs are relative to /hls/<n>/; make them absolute so the playlist also
+        # works when served from Xtream-style paths like /live/<user>/<pass>/<id>.m3u8.
+        body = "\n".join(l if l.startswith("#") or not l else f"{self.base}/hls/{variant}/{l}" for l in lines) + "\n"
         return self.send(body, "application/vnd.apple.mpegurl", extra={"Cache-Control": "no-cache"})
 
     def live_ts(self, variant):
@@ -195,6 +203,13 @@ class Handler(BaseHTTPRequestHandler):
             ahead = sent * SEG_DUR - (time.time() - started)
             if ahead > 2 * SEG_DUR:
                 time.sleep(ahead - 2 * SEG_DUR)
+
+    def archive_hls(self, variant):
+        out = ["#EXTM3U", "#EXT-X-VERSION:3", f"#EXT-X-TARGETDURATION:{int(SEG_DUR)}", "#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-MEDIA-SEQUENCE:0"]
+        for seg in segments(variant):
+            out += [f"#EXTINF:{SEG_DUR:.3f},", f"{self.base}/vod/{variant}/{seg}"]
+        out.append("#EXT-X-ENDLIST")
+        return self.send("\n".join(out) + "\n", "application/vnd.apple.mpegurl")
 
     def archive_ts(self, variant):
         data = b"".join(open(os.path.join(MEDIA, f"ch{variant}", s), "rb").read() for s in segments(variant))
@@ -293,7 +308,7 @@ LIVE_SOURCES = [
 ]
 
 
-def start_live_encoders():
+def start_live_encoders(no_audio=False):
     """One real-time ffmpeg encoder per test channel writing a rolling live HLS window.
     Encoding live (rather than looping a file) gives continuous, monotonic timestamps,
     which AVPlayer requires."""
@@ -308,7 +323,7 @@ def start_live_encoders():
         # The realtime/arealtime filters pace the generators to wall-clock speed.
         inputs = ["-f", "lavfi", "-i", f"{video},realtime"]
         audio = ["-an"]
-        if freq:
+        if freq and not no_audio:
             inputs += ["-f", "lavfi", "-i", f"sine=frequency={freq}:sample_rate=48000,arealtime"]
             audio = ["-c:a", "aac", "-b:a", "64k", "-ac", "2"]
         procs.append(subprocess.Popen([
@@ -339,10 +354,12 @@ class DualStackServer(ThreadingHTTPServer):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8900)
+    ap.add_argument("--no-audio", action="store_true",
+                    help="encode live channels without audio (for headless simulators with no audio device)")
     args = ap.parse_args()
     if not segments(0):
         print("Media not generated; run tools/fixture-server/generate_media.sh first", file=sys.stderr)
-    start_live_encoders()
+    start_live_encoders(args.no_audio)
     srv = DualStackServer(("::", args.port), Handler)
     srv.daemon_threads = True
     print(f"Tuner fixture server on http://localhost:{args.port}  (Android emulator: http://10.0.2.2:{args.port})")

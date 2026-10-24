@@ -15,6 +15,8 @@ final class PlayerEngine: ObservableObject {
     @Published private(set) var isBuffering = false
 
     private var retries = 0
+    /// False only while the user has paused; stalled live streams auto-resume otherwise.
+    private var wantsPlayback = true
     /// URL actually being played; may differ from the request's when a .ts stream is swapped for HLS.
     private var activeURL: String?
     private var itemObservers: [NSKeyValueObservation] = []
@@ -48,6 +50,7 @@ final class PlayerEngine: ObservableObject {
         current = request
         retries = 0
         status = nil
+        wantsPlayback = true
         activeURL = Self.preferredURL(request.url)
         prepare(request, startMs: request.startPositionMs)
     }
@@ -63,6 +66,16 @@ final class PlayerEngine: ObservableObject {
         let path = url.components(separatedBy: "?")[0]
         guard path.lowercased().hasSuffix(".ts") else { return nil }
         return String(path.dropLast(3)) + ".m3u8" + (url.contains("?") ? "?" + url.components(separatedBy: "?").dropFirst().joined(separator: "?") : "")
+    }
+
+    func togglePause() {
+        if player.rate == 0 {
+            wantsPlayback = true
+            player.play()
+        } else {
+            wantsPlayback = false
+            player.pause()
+        }
     }
 
     func stop() {
@@ -98,6 +111,15 @@ final class PlayerEngine: ObservableObject {
 
     private func observe(_ item: AVPlayerItem, request: PlaybackRequest) {
         clearItemObservers()
+        // With automaticallyWaitsToMinimizeStalling off (live), AVPlayer drops to rate 0 on a
+        // stall instead of waiting, so resume as soon as the buffer can keep up again.
+        itemObservers.append(item.observe(\.isPlaybackLikelyToKeepUp, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor in
+                guard let self, self.wantsPlayback, item.isPlaybackLikelyToKeepUp, self.player.rate == 0,
+                      self.player.currentItem === item else { return }
+                if self.current?.isLive == true { self.player.playImmediately(atRate: 1) } else { self.player.play() }
+            }
+        })
         itemObservers.append(item.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor in
                 if item.status == .failed { self?.scheduleRetry(item.error?.localizedDescription ?? "Playback failed") }

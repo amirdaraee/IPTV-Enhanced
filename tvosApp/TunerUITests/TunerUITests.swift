@@ -33,31 +33,31 @@ final class TunerUITests: XCTestCase {
     }
 
     func testGuideAndLivePlayback() {
-        app.launchArguments = ["-demoXtream", "http://localhost:8900"]
+        app.launchArguments = ["-demoXtream", "http://localhost:8900", "-playerHUD"]
         app.launch()
         Thread.sleep(forTimeInterval: 8)
         shot("guide")
-        press(.down)
-        press(.select, wait: 4)
+        press(.select, wait: 6)
         shot("preview")
-        press(.right, 2)
-        shot("guide-moved-right")
-        press(.left, 4)
-        shot("guide-catchup-area")
-        press(.right, 2)
-        press(.select, wait: 1)
-        press(.select, wait: 3)
+        press(.select, wait: 4)
         shot("fullscreen")
-        press(.down, wait: 3)
+        press(.down, wait: 5)
         shot("zapped")
         press(.select, wait: 1.5)
         shot("channel-list")
         press(.menu, wait: 1)
         press(.menu, wait: 1)
-        press(.menu, wait: 1.5)
+        press(.menu, wait: 2)
         shot("back-to-guide")
+        press(.right, 2)
+        shot("guide-moved-right")
+        press(.left, 6)
+        shot("guide-catchup-area")
         press(.menu, wait: 1.5)
         shot("groups-panel")
+        press(.down, wait: 1)
+        press(.select, wait: 3)
+        shot("sports-group")
     }
 
     func testMoviesSeriesSearchSettings() {

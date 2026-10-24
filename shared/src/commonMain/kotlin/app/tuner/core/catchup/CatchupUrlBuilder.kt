@@ -37,7 +37,9 @@ object CatchupUrlBuilder {
                 val t = Instant.fromEpochSeconds(startSec).toLocalDateTime(tz)
                 val stamp = "${t.year}-${p2(t.month.ordinal + 1)}-${p2(t.day)}:${p2(t.hour)}-${p2(t.minute)}"
                 val c = client.credentials
-                "${c.server}/timeshift/${XtreamClient.enc(c.username)}/${XtreamClient.enc(c.password)}/${(durationSec + 59) / 60}/$stamp/$id.ts"
+                // Match the live format: HLS channels (tvOS) get an HLS archive, others MPEG-TS.
+                val ext = if (channel.url.substringBefore('?').endsWith(".m3u8")) "m3u8" else "ts"
+                "${c.server}/timeshift/${XtreamClient.enc(c.username)}/${XtreamClient.enc(c.password)}/${(durationSec + 59) / 60}/$stamp/$id.$ext"
             }
             CatchupMode.SHIFT -> appendQuery(channel.url, "utc=$startSec&lutc=${nowMs / 1000}")
             CatchupMode.FLUSSONIC -> flussonic(channel.url, startSec, durationSec)

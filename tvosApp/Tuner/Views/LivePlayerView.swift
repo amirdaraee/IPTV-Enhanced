@@ -56,11 +56,15 @@ struct LivePlayerView: View {
                     }
                 }
                 .onPlayPauseCommand {
-                    if engine.player.timeControlStatus == .paused { engine.player.play() } else { engine.player.pause() }
+                    engine.togglePause()
                     flashInfo()
                 }
                 .onLongPressGesture(minimumDuration: 0.6) { showOptions = true }
                 .disabled(showList)
+
+            #if DEBUG
+            PlayerHUD(engine: engine).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            #endif
 
             if engine.isBuffering || engine.status != nil {
                 Text(engine.status ?? "Buffering…")
@@ -303,7 +307,7 @@ struct VodPlayerView: View {
 }
 
 #if DEBUG
-private struct PlayerHUD: View {
+struct PlayerHUD: View {
     let engine: PlayerEngine
     @State private var text = ""
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
