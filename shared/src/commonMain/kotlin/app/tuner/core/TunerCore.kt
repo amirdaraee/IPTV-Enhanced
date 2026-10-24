@@ -55,9 +55,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
 import kotlin.random.Random
 
 /** Handle returned by `watch*` functions; call [cancel] to stop receiving callbacks. */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("Subscription", exact = true)
 fun interface Cancellable {
     fun cancel()
 }
@@ -71,6 +75,8 @@ class LockedException : Exception("This content is locked. Enter the parental PI
  * on the main thread. All suspend functions are annotated with @Throws so that
  * failures surface as Swift errors instead of crashing.
  */
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("Tuner", exact = true)
 class TunerCore internal constructor(driver: SqlDriver, private val http: HttpClient) {
 
     constructor(context: PlatformContext) : this(createDriver(context), createHttpClient(context))

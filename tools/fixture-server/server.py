@@ -15,10 +15,14 @@ Android emulator can use http://10.0.2.2:8900 and the tvOS simulator http://loca
   /movie/<u>/<p>/<id>.mp4       VOD file (supports Range)
   /series/<u>/<p>/<id>.mp4      episode file
   /timeshift/<u>/<p>/<min>/<start>/<id>.ts   archive (serves the loop once)
-  /hls/<n>/live.m3u8            live sliding window over media/ch<n>
+  /hls/<n>/live.m3u8            real-time live HLS produced by ffmpeg from media/ch<n>.mp4
 """
 import argparse
 import gzip
+import atexit
+import shutil
+import socket
+import subprocess
 import json
 import os
 import re
@@ -30,6 +34,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 MEDIA = os.path.join(ROOT, "media")
+LIVE = os.path.join(MEDIA, "live")
 SEG_DUR = 2.0
 
 CATEGORIES = [("1", "News"), ("2", "Sports"), ("3", "Movies & Drama"), ("4", "Kids")]
@@ -123,9 +128,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.match(r"^/hls/(\d+)/live\.m3u8$", path)
             if m:
                 return self.live_playlist(int(m.group(1)))
-            m = re.match(r"^/hls/(\d+)/(seg\d+\.ts)$", path)
+            m = re.match(r"^/hls/(\d+)/(live\d+\.ts)$", path)
             if m:
-                return self.file(os.path.join(MEDIA, f"ch{m.group(1)}", m.group(2)), "video/mp2t")
+                return self.file(os.path.join(LIVE, f"ch{m.group(1)}", m.group(2)), "video/mp2t")
             m = re.match(r"^/live/[^/]+/[^/]+/(\d+)\.(m3u8|ts)$", path)
             if m:
                 ch = next((c for c in CHANNELS if c["id"] == int(m.group(1))), None)
@@ -163,18 +168,12 @@ class Handler(BaseHTTPRequestHandler):
         return "\n".join(lines) + "\n"
 
     def live_playlist(self, variant):
-        segs = segments(variant)
-        if not segs:
-            return self.send("media missing: run generate_media.sh", "text/plain", 503)
-        seq = int(time.time() / SEG_DUR)
-        window = 6
-        out = ["#EXTM3U", "#EXT-X-VERSION:3", f"#EXT-X-TARGETDURATION:{int(SEG_DUR)}", f"#EXT-X-MEDIA-SEQUENCE:{seq}"]
-        for i in range(seq, seq + window):
-            if i > seq and (i % len(segs)) == 0:
-                out.append("#EXT-X-DISCONTINUITY")
-            out.append(f"#EXTINF:{SEG_DUR:.3f},")
-            out.append(f"{self.base}/hls/{variant}/{segs[i % len(segs)]}")
-        return self.send("\n".join(out) + "\n", "application/vnd.apple.mpegurl", extra={"Cache-Control": "no-cache"})
+        fp = os.path.join(LIVE, f"ch{variant}", "live.m3u8")
+        if not os.path.exists(fp):
+            return self.send("live stream not running (needs ffmpeg and generate_media.sh)", "text/plain", 503)
+        with open(fp, "rb") as f:
+            body = f.read()
+        return self.send(body, "application/vnd.apple.mpegurl", extra={"Cache-Control": "no-cache"})
 
     def live_ts(self, variant):
         segs = segments(variant)
@@ -284,13 +283,45 @@ class Handler(BaseHTTPRequestHandler):
         return j([])
 
 
+def start_live_encoders():
+    """One ffmpeg per test channel: loops the channel MP4 in real time into a rolling live HLS window."""
+    if not shutil.which("ffmpeg"):
+        print("ffmpeg not found: /hls live streams disabled", file=sys.stderr)
+        return
+    shutil.rmtree(LIVE, ignore_errors=True)
+    procs = []
+    for n in range(4):
+        src = os.path.join(MEDIA, f"ch{n}.mp4")
+        if not os.path.exists(src):
+            continue
+        out = os.path.join(LIVE, f"ch{n}")
+        os.makedirs(out, exist_ok=True)
+        procs.append(subprocess.Popen([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-stream_loop", "-1", "-i", src,
+            "-c", "copy", "-f", "hls", "-hls_time", "2", "-hls_list_size", "8",
+            "-hls_flags", "delete_segments+omit_endlist+program_date_time",
+            "-hls_segment_filename", os.path.join(out, "live%05d.ts"), os.path.join(out, "live.m3u8"),
+        ]))
+    atexit.register(lambda: [p.terminate() for p in procs])
+
+
+class DualStackServer(ThreadingHTTPServer):
+    """Listens on IPv6 and IPv4 so `localhost` works whichever address a client tries first."""
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8900)
     args = ap.parse_args()
     if not segments(0):
         print("Media not generated; run tools/fixture-server/generate_media.sh first", file=sys.stderr)
-    srv = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
+    start_live_encoders()
+    srv = DualStackServer(("::", args.port), Handler)
     srv.daemon_threads = True
     print(f"Tuner fixture server on http://localhost:{args.port}  (Android emulator: http://10.0.2.2:{args.port})")
     srv.serve_forever()

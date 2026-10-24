@@ -1,5 +1,8 @@
 package app.tuner.core.model
 
+import kotlin.experimental.ExperimentalObjCName
+import kotlin.native.ObjCName
+
 enum class SourceType { M3U, XTREAM }
 
 enum class ContentKind { LIVE, MOVIE, SERIES }
@@ -44,6 +47,8 @@ data class SourceInput(
 
 enum class GroupType { FAVORITES, RECENTS, ALL, CATEGORY }
 
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("ChannelGroup", exact = true)
 data class Group(
     /** Stable id usable for persistence: "fav", "recent", "all" or "c:<source>:<kind>:<key>". */
     val id: String,
@@ -218,6 +223,8 @@ data class SyncState(
     val error: String?,
 )
 
+@OptIn(ExperimentalObjCName::class)
+@ObjCName("TunerSettings", exact = true)
 data class Settings(
     val guidePastDays: Int = 2,
     val guideFutureDays: Int = 7,

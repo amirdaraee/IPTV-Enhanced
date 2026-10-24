@@ -5,7 +5,7 @@ options:
     tvOS: "17.0"
 settings:
   base:
-    SWIFT_VERSION: "6.0"
+    SWIFT_VERSION: "5.0"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
     DEAD_CODE_STRIPPING: YES
 targets:
@@ -24,7 +24,6 @@ targets:
         UIRequiredDeviceCapabilities: [arm64]
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsArbitraryLoadsForMedia: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.tuner.tv
@@ -39,3 +38,24 @@ targets:
           cd "$SRCROOT/.."
           export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home}"
           ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+  TunerUITests:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources:
+      - TunerUITests
+    dependencies:
+      - target: Tuner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.tuner.tv.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Tuner
+schemes:
+  Tuner:
+    build:
+      targets:
+        Tuner: all
+        TunerUITests: [test]
+    test:
+      targets:
+        - TunerUITests
