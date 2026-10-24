@@ -19,6 +19,7 @@ import java.util.TimeZone
 import java.util.zip.GZIPOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -181,6 +182,17 @@ class CoreEndToEndTest {
         assertFalse(core.unlock("0000"))
         assertTrue(core.unlock("1234"))
         assertTrue(core.isAllowed(true))
+
+        // a locked group locks its channels everywhere (All, search) and play is refused
+        core.lockSession()
+        val newsGroup = core.liveGroups(false).first { it.name == "News" }
+        core.setGroupLocked(newsGroup, true)
+        val lockedNews = core.search("news").channels.single()
+        assertTrue(lockedNews.locked)
+        assertTrue(core.channels(core.liveGroups(false).first { it.type == GroupType.ALL }, false).first { it.id == lockedNews.id }.locked)
+        assertFailsWith<LockedException> { core.playChannel(lockedNews) }
+        core.unlock("1234")
+        core.playChannel(lockedNews)
 
         core.deleteSource(id)
         assertTrue(core.sources().isEmpty())

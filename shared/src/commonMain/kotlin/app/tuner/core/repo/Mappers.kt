@@ -32,15 +32,15 @@ internal fun mapChannel(
 internal fun mapMovie(
     id: Long, sourceId: Long, ckey: String, categoryKey: String, name: String, nameNorm: String,
     poster: String?, url: String, remoteId: String?, rating: Double?, year: String?, addedAt: Long?,
-    position: Long, favorite: Long,
-) = Movie(id, sourceId, ckey, categoryKey, name, poster, url, remoteId, rating, year, addedAt, favorite != 0L)
+    position: Long, favorite: Long, locked: Long,
+) = Movie(id, sourceId, ckey, categoryKey, name, poster, url, remoteId, rating, year, addedAt, favorite != 0L, locked != 0L)
 
 @Suppress("UNUSED_PARAMETER")
 internal fun mapSeries(
     id: Long, sourceId: Long, ckey: String, categoryKey: String, name: String, nameNorm: String,
     cover: String?, remoteId: String, plot: String?, genre: String?, rating: Double?, year: String?,
-    position: Long, favorite: Long,
-) = Series(id, sourceId, ckey, categoryKey, name, cover, remoteId, plot, genre, rating, year, favorite != 0L)
+    position: Long, favorite: Long, locked: Long,
+) = Series(id, sourceId, ckey, categoryKey, name, cover, remoteId, plot, genre, rating, year, favorite != 0L, locked != 0L)
 
 @Suppress("UNUSED_PARAMETER")
 internal fun mapProgramme(

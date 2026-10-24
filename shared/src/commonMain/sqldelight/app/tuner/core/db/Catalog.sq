@@ -177,14 +177,15 @@ UPDATE group_pref SET custom_position = ? WHERE source_id = ? AND kind = ? AND c
 -- ---------- channels ----------
 
 channelsInGroup:
-SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM channel ch
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
 WHERE ch.source_id = ? AND ch.category_key = ? AND (:includeHidden = 1 OR IFNULL(p.hidden, 0) = 0)
 ORDER BY ch.position;
 
 allChannels:
-SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM channel ch
 JOIN source s ON s.id = ch.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
@@ -194,40 +195,45 @@ ORDER BY s.position, ch.position
 LIMIT :limit;
 
 favoriteChannels:
-SELECT ch.*, p.favorite, p.hidden, p.locked
+SELECT ch.*, p.favorite, p.hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM channel ch
 JOIN source s ON s.id = ch.source_id AND s.enabled = 1
 JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
 WHERE p.favorite = 1
 ORDER BY p.favorite_at;
 
 recentChannels:
-SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM recent r
 JOIN channel ch ON ch.source_id = r.source_id AND ch.ckey = r.ckey
 JOIN source s ON s.id = ch.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
 GROUP BY r.source_id, r.ckey
 ORDER BY MAX(r.watched_at) DESC
 LIMIT 30;
 
 channelById:
-SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM channel ch
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
 WHERE ch.id = ?;
 
 channelByKey:
-SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM channel ch
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
 WHERE ch.source_id = ? AND ch.ckey = ?;
 
 searchChannels:
-SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM channel ch
 JOIN source s ON s.id = ch.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
 WHERE ch.name_norm LIKE ('%' || :query || '%') AND IFNULL(p.hidden, 0) = 0
 ORDER BY CASE WHEN ch.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(ch.name_norm)
 LIMIT :limit;
@@ -250,81 +256,91 @@ setItemLocked:
 UPDATE item_pref SET locked = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
 
 hiddenChannels:
-SELECT ch.*, p.favorite, p.hidden, p.locked
+SELECT ch.*, p.favorite, p.hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM channel ch
 JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
 WHERE p.hidden = 1
 ORDER BY ch.name;
 
 -- ---------- vod ----------
 
 moviesInGroup:
-SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(g.locked, 0) AS locked
 FROM movie m
 LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
 WHERE m.source_id = ? AND m.category_key = ?
 ORDER BY m.position
 LIMIT :limit OFFSET :offset;
 
 recentMovies:
-SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(g.locked, 0) AS locked
 FROM movie m
 JOIN source s ON s.id = m.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
 WHERE m.added_at IS NOT NULL
 ORDER BY m.added_at DESC
 LIMIT :limit;
 
 favoriteMovies:
-SELECT m.*, p.favorite
+SELECT m.*, p.favorite, IFNULL(g.locked, 0) AS locked
 FROM movie m
 JOIN source s ON s.id = m.source_id AND s.enabled = 1
 JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
 WHERE p.favorite = 1
 ORDER BY p.favorite_at DESC;
 
 movieById:
-SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(g.locked, 0) AS locked
 FROM movie m
 LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
 WHERE m.id = ?;
 
 searchMovies:
-SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(g.locked, 0) AS locked
 FROM movie m
 JOIN source s ON s.id = m.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
 WHERE m.name_norm LIKE ('%' || :query || '%')
 ORDER BY CASE WHEN m.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(m.name_norm)
 LIMIT :limit;
 
 seriesInGroup:
-SELECT se.*, IFNULL(p.favorite, 0) AS favorite
+SELECT se.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(g.locked, 0) AS locked
 FROM series se
 LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
 WHERE se.source_id = ? AND se.category_key = ?
 ORDER BY se.position
 LIMIT :limit OFFSET :offset;
 
 favoriteSeries:
-SELECT se.*, p.favorite
+SELECT se.*, p.favorite, IFNULL(g.locked, 0) AS locked
 FROM series se
 JOIN source s ON s.id = se.source_id AND s.enabled = 1
 JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
 WHERE p.favorite = 1
 ORDER BY p.favorite_at DESC;
 
 seriesById:
-SELECT se.*, IFNULL(p.favorite, 0) AS favorite
+SELECT se.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(g.locked, 0) AS locked
 FROM series se
 LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
 WHERE se.id = ?;
 
 searchSeries:
-SELECT se.*, IFNULL(p.favorite, 0) AS favorite
+SELECT se.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(g.locked, 0) AS locked
 FROM series se
 JOIN source s ON s.id = se.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
 WHERE se.name_norm LIKE ('%' || :query || '%')
 ORDER BY CASE WHEN se.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(se.name_norm)
 LIMIT :limit;

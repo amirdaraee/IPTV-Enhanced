@@ -94,6 +94,7 @@ data class Movie(
     val year: String?,
     val addedAt: Long?,
     val favorite: Boolean,
+    val locked: Boolean,
 )
 
 data class Series(
@@ -109,6 +110,7 @@ data class Series(
     val rating: Double?,
     val year: String?,
     val favorite: Boolean,
+    val locked: Boolean,
 )
 
 data class Episode(

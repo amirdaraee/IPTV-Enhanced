@@ -62,6 +62,9 @@ fun interface Cancellable {
     fun cancel()
 }
 
+/** Thrown by the play functions when content is parental-locked and the session is not unlocked. */
+class LockedException : Exception("This content is locked. Enter the parental PIN to continue.")
+
 /**
  * The single entry point the Android TV and tvOS apps use. Every suspend
  * function runs its work off the main thread; observer callbacks are delivered
@@ -481,6 +484,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     @Throws(Exception::class)
     suspend fun playChannel(channel: Channel): PlaybackRequest {
+        requireAllowed(channel.locked)
         io {
             db.transaction {
                 val q = db.userQueries
@@ -503,6 +507,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
     /** Archive playback for a past programme; null when the channel has no catch-up. */
     @Throws(Exception::class)
     suspend fun playCatchup(channel: Channel, programme: Programme): PlaybackRequest? {
+        requireAllowed(channel.locked)
         val source = source(channel.sourceId) ?: return null
         val xtream = if (source.type == SourceType.XTREAM) syncer.xtreamClient(source) else null
         val now = nowMillis()
@@ -531,6 +536,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     @Throws(Exception::class)
     suspend fun playMovie(movie: Movie): PlaybackRequest {
+        requireAllowed(movie.locked)
         val p = progress(movieKey(movie))
         val source = source(movie.sourceId)
         return PlaybackRequest(
@@ -542,6 +548,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     @Throws(Exception::class)
     suspend fun playEpisode(series: Series, episode: Episode): PlaybackRequest {
+        requireAllowed(series.locked)
         val key = episodeKey(series.sourceId, episode.remoteId)
         val p = progress(key)
         val source = source(series.sourceId)
@@ -630,6 +637,10 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
         val ok = Sha256.hex(salt + pin) == hash
         if (ok) sessionUnlocked = true
         return ok
+    }
+
+    private fun requireAllowed(locked: Boolean) {
+        if (!isAllowed(locked)) throw LockedException()
     }
 
     fun lockSession() {
