@@ -54,7 +54,8 @@ final class VodModel: ObservableObject {
         let base = (try? await core.vodGroups(kind: kind, includeHidden: false)) ?? []
         let resume = await resumeItems()
         groups = (resume.isEmpty ? [] : [continueGroup]) + base
-        let next = groups.first { $0.id == group?.id } ?? groups.first { $0.type == .category } ?? groups.first
+        let allowed = groups.filter { core.isAllowed(locked: $0.locked) }
+        let next = allowed.first { $0.id == group?.id } ?? allowed.first { $0.type == .category } ?? allowed.first
         await load(next)
     }
 
@@ -151,7 +152,7 @@ struct VodBrowserView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 40)], spacing: 50) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 40, alignment: .top)], alignment: .leading, spacing: 50) {
                             ForEach(model.items) { item in
                                 Button { open(item) } label: { PosterCard(item: item) }
                                     .buttonStyle(.borderless)

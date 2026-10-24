@@ -21,10 +21,6 @@ for i in "${!sources[@]}"; do
     -c:a aac -b:a 96k -ac 2 \
     -f hls -hls_time 2 -hls_list_size 0 -hls_segment_filename "$dir/seg%03d.ts" "$dir/index.m3u8"
 done
-# 60 s MP4 per channel: the source for the real-time live HLS that server.py runs with ffmpeg.
-for i in "${!sources[@]}"; do
-  [ -f "$OUT/ch$i.mp4" ] || ffmpeg -hide_banner -loglevel error -y -allowed_extensions ALL -i "$OUT/ch$i/index.m3u8" -c copy "$OUT/ch$i.mp4"
-done
 if [ ! -f "$OUT/movie.mp4" ]; then
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i "testsrc2=size=1280x720:rate=25" -f lavfi -i "sine=frequency=330:sample_rate=48000" \

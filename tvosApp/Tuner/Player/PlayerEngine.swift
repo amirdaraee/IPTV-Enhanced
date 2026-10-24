@@ -15,6 +15,8 @@ final class PlayerEngine: ObservableObject {
     @Published private(set) var isBuffering = false
 
     private var retries = 0
+    /// URL actually being played; may differ from the request's when a .ts stream is swapped for HLS.
+    private var activeURL: String?
     private var itemObservers: [NSKeyValueObservation] = []
     private var notificationTokens: [NSObjectProtocol] = []
     private var timeControlObserver: NSKeyValueObservation?
@@ -46,10 +48,25 @@ final class PlayerEngine: ObservableObject {
         current = request
         retries = 0
         status = nil
+        activeURL = Self.preferredURL(request.url)
         prepare(request, startMs: request.startPositionMs)
     }
 
+    /// AVPlayer can't play raw MPEG-TS. Xtream-style panels serve the same stream as HLS
+    /// when the extension is swapped, so try that form first for live `.ts` paths.
+    static func preferredURL(_ url: String) -> String {
+        guard url.range(of: #"/live/[^/]+/[^/]+/\d+\.ts(\?.*)?$"#, options: .regularExpression) != nil else { return url }
+        return hlsVariant(url) ?? url
+    }
+
+    private static func hlsVariant(_ url: String) -> String? {
+        let path = url.components(separatedBy: "?")[0]
+        guard path.lowercased().hasSuffix(".ts") else { return nil }
+        return String(path.dropLast(3)) + ".m3u8" + (url.contains("?") ? "?" + url.components(separatedBy: "?").dropFirst().joined(separator: "?") : "")
+    }
+
     func stop() {
+        activeURL = nil
         stallTask?.cancel()
         clearItemObservers()
         current = nil
@@ -59,7 +76,7 @@ final class PlayerEngine: ObservableObject {
     }
 
     private func prepare(_ request: PlaybackRequest, startMs: Int64) {
-        guard let url = Self.url(from: request.url) else {
+        guard let url = Self.url(from: activeURL ?? request.url) else {
             status = "Invalid stream address"
             return
         }
@@ -69,11 +86,14 @@ final class PlayerEngine: ObservableObject {
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = request.isLive ? 6 : 0
         observe(item, request: request)
+        // Live IPTV: start as soon as data arrives instead of waiting for AVPlayer's
+        // stall prediction, which is often too pessimistic for single-variant live HLS.
+        player.automaticallyWaitsToMinimizeStalling = !request.isLive
         player.replaceCurrentItem(with: item)
         if startMs > 0 {
             player.seek(to: CMTime(value: startMs, timescale: 1000), toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
         }
-        player.play()
+        if request.isLive { player.playImmediately(atRate: 1) } else { player.play() }
     }
 
     private func observe(_ item: AVPlayerItem, request: PlaybackRequest) {
@@ -105,6 +125,13 @@ final class PlayerEngine: ObservableObject {
     private func scheduleRetry(_ reason: String) {
         guard let request = current else { return }
         NSLog("[Tuner] playback problem: %@", reason)
+        // A raw .ts stream that AVPlayer rejected: try the panel's HLS variant once before backing off.
+        if retries == 0, let current = activeURL, let hls = Self.hlsVariant(current), hls != current {
+            activeURL = hls
+            prepare(request, startMs: 0)
+            retries = 1
+            return
+        }
         guard retries < Self.maxRetries else {
             status = "Playback failed: \(reason)"
             return

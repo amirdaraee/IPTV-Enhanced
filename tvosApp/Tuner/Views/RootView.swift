@@ -12,7 +12,7 @@ struct RootView: View {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-debugPlay"), i + 1 < args.count else { return nil }
         return PlaybackRequest(url: args[i + 1], title: "Debug", subtitle: nil, image: nil, userAgent: nil, referrer: nil,
-                               isLive: false, startPositionMs: 0, progressKey: nil, progressParentKey: nil, sourceId: 0, kind: .movie, channelId: nil)
+                               isLive: args.contains("-debugLive"), startPositionMs: 0, progressKey: nil, progressParentKey: nil, sourceId: 0, kind: .movie, channelId: nil)
     }()
     #endif
 

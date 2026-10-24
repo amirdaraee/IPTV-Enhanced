@@ -364,3 +364,6 @@ FROM series se
 LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
 LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
 WHERE se.source_id = ? AND se.ckey = ?;
+
+groupLocked:
+SELECT locked FROM group_pref WHERE source_id = ? AND kind = ? AND ckey = ?;

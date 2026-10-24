@@ -65,9 +65,10 @@ abstract class VodViewModel(private val kind: ContentKind) : ViewModel() {
             val resume = runCatching { core.continueWatching(30) }.getOrDefault(emptyList())
                 .filter { if (kind == ContentKind.MOVIE) it.kind == ContentKind.MOVIE else it.kind == ContentKind.SERIES }
             groups = (if (resume.isNotEmpty()) listOf(CONTINUE.copy(kind = kind)) else emptyList()) + base
-            val keep = groups.firstOrNull { it.id == group?.id }
-                ?: groups.firstOrNull { it.type == GroupType.CATEGORY }
-                ?: groups.firstOrNull()
+            val allowed = groups.filter { core.isAllowed(it.locked) }
+            val keep = allowed.firstOrNull { it.id == group?.id }
+                ?: allowed.firstOrNull { it.type == GroupType.CATEGORY }
+                ?: allowed.firstOrNull()
             load(keep)
         }
     }

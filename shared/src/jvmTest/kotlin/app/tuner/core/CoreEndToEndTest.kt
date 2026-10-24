@@ -191,6 +191,7 @@ class CoreEndToEndTest {
         assertTrue(lockedNews.locked)
         assertTrue(core.channels(core.liveGroups(false).first { it.type == GroupType.ALL }, false).first { it.id == lockedNews.id }.locked)
         assertFailsWith<LockedException> { core.playChannel(lockedNews) }
+        assertFailsWith<LockedException> { core.channels(newsGroup, false) }
         core.unlock("1234")
         core.playChannel(lockedNews)
 

@@ -104,10 +104,12 @@ final class TunerUITests: XCTestCase {
                 "http://localhost:8900/movie/a/b/1.mp4",
                 "http://localhost:8900/hls/1/live.m3u8"]
         for (i, url) in urls.enumerated() {
-            app.launchArguments = ["-debugPlay", url, "-playerHUD"]
+            app.launchArguments = ["-debugPlay", url, "-playerHUD"] + (url.contains("live") ? ["-debugLive"] : [])
             app.launch()
             Thread.sleep(forTimeInterval: 10)
             shot("debug-\(i)")
+            Thread.sleep(forTimeInterval: 3)
+            shot("debug-\(i)-later")
             app.terminate()
         }
     }

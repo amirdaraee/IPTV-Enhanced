@@ -56,10 +56,12 @@ class GuideViewModel : ViewModel() {
             groups = all.filter { it.type == GroupType.CATEGORY || it.type == GroupType.ALL || nonEmpty(it) }
             val saved = prefs.getString("group", null)
             val keep = group?.id ?: saved
-            val next = groups.firstOrNull { it.id == keep }
-                ?: groups.firstOrNull { it.type == GroupType.FAVORITES }
-                ?: groups.firstOrNull { it.type == GroupType.CATEGORY }
-                ?: groups.firstOrNull()
+            // Never auto-open a locked group; the user must pick it and enter the PIN.
+            val allowed = groups.filter { core.isAllowed(it.locked) }
+            val next = allowed.firstOrNull { it.id == keep }
+                ?: allowed.firstOrNull { it.type == GroupType.FAVORITES }
+                ?: allowed.firstOrNull { it.type == GroupType.CATEGORY }
+                ?: allowed.firstOrNull()
             loadGroup(next, resetFocus = next?.id != group?.id)
         }
     }

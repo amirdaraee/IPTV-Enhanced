@@ -41,10 +41,12 @@ final class GuideModel: ObservableObject {
         groups = visible
         let saved = UserDefaults.standard.string(forKey: "guide.group")
         let keep = group?.id ?? saved
-        let next = visible.first { $0.id == keep }
-            ?? visible.first { $0.type == .favorites }
-            ?? visible.first { $0.type == .category }
-            ?? visible.first
+        // Never auto-open a locked group; the user must pick it and enter the PIN.
+        let allowed = visible.filter { core.isAllowed(locked: $0.locked) }
+        let next = allowed.first { $0.id == keep }
+            ?? allowed.first { $0.type == .favorites }
+            ?? allowed.first { $0.type == .category }
+            ?? allowed.first
         await load(next, reset: next?.id != group?.id)
     }
 

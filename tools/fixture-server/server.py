@@ -21,6 +21,7 @@ import argparse
 import gzip
 import atexit
 import shutil
+import signal
 import socket
 import subprocess
 import json
@@ -283,26 +284,47 @@ class Handler(BaseHTTPRequestHandler):
         return j([])
 
 
+LIVE_SOURCES = [
+    ("testsrc2=size=640x360:rate=25", 440),
+    ("smptehdbars=size=640x360:rate=25", 554),
+    ("mandelbrot=size=640x360:rate=25", 659),
+    ("life=size=640x360:rate=25:mold=10:ratio=0.1:death_color=#202060:life_color=#40c0ff", 880),
+    ("testsrc=size=640x360:rate=25", None),  # /hls/4: video only, for environments without audio output
+]
+
+
 def start_live_encoders():
-    """One ffmpeg per test channel: loops the channel MP4 in real time into a rolling live HLS window."""
+    """One real-time ffmpeg encoder per test channel writing a rolling live HLS window.
+    Encoding live (rather than looping a file) gives continuous, monotonic timestamps,
+    which AVPlayer requires."""
     if not shutil.which("ffmpeg"):
         print("ffmpeg not found: /hls live streams disabled", file=sys.stderr)
         return
     shutil.rmtree(LIVE, ignore_errors=True)
     procs = []
-    for n in range(4):
-        src = os.path.join(MEDIA, f"ch{n}.mp4")
-        if not os.path.exists(src):
-            continue
+    for n, (video, freq) in enumerate(LIVE_SOURCES):
         out = os.path.join(LIVE, f"ch{n}")
         os.makedirs(out, exist_ok=True)
+        # The realtime/arealtime filters pace the generators to wall-clock speed.
+        inputs = ["-f", "lavfi", "-i", f"{video},realtime"]
+        audio = ["-an"]
+        if freq:
+            inputs += ["-f", "lavfi", "-i", f"sine=frequency={freq}:sample_rate=48000,arealtime"]
+            audio = ["-c:a", "aac", "-b:a", "64k", "-ac", "2"]
         procs.append(subprocess.Popen([
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-re", "-stream_loop", "-1", "-i", src,
-            "-c", "copy", "-f", "hls", "-hls_time", "2", "-hls_list_size", "8",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", *inputs,
+            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+            "-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-b:v", "800k", *audio,
+            "-f", "hls", "-hls_time", "2", "-hls_list_size", "8",
             "-hls_flags", "delete_segments+omit_endlist+program_date_time",
             "-hls_segment_filename", os.path.join(out, "live%05d.ts"), os.path.join(out, "live.m3u8"),
         ]))
-    atexit.register(lambda: [p.terminate() for p in procs])
+    def stop(*_):
+        for p in procs:
+            p.terminate()
+    atexit.register(stop)
+    # atexit doesn't run on SIGTERM; make sure encoders die with the server.
+    signal.signal(signal.SIGTERM, lambda *a: (stop(), sys.exit(0)))
 
 
 class DualStackServer(ThreadingHTTPServer):

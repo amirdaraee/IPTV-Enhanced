@@ -350,8 +350,16 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     // ------------------------------------------------------------------ channels
 
+    /** Refuses to list a locked category until the PIN has been entered (checked against the DB, not the caller's copy). */
+    private fun requireGroupAllowed(group: Group) {
+        if (group.type != GroupType.CATEGORY) return
+        val locked = db.catalogQueries.groupLocked(group.sourceId, group.kind.name, group.key).executeAsOneOrNull() == 1L
+        requireAllowed(locked)
+    }
+
     @Throws(Exception::class)
     suspend fun channels(group: Group, includeHidden: Boolean): List<Channel> = io {
+        requireGroupAllowed(group)
         val q = db.catalogQueries
         when (group.type) {
             GroupType.FAVORITES -> q.favoriteChannels(::mapChannel).executeAsList()
@@ -418,6 +426,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     @Throws(Exception::class)
     suspend fun movies(group: Group, offset: Int, limit: Int): List<Movie> = io {
+        requireGroupAllowed(group)
         val q = db.catalogQueries
         when (group.type) {
             GroupType.FAVORITES -> q.favoriteMovies(::mapMovie).executeAsList()
@@ -429,6 +438,7 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     @Throws(Exception::class)
     suspend fun series(group: Group, offset: Int, limit: Int): List<Series> = io {
+        requireGroupAllowed(group)
         val q = db.catalogQueries
         when (group.type) {
             GroupType.FAVORITES -> q.favoriteSeries(::mapSeries).executeAsList()
