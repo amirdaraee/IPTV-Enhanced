@@ -25,6 +25,7 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 **Live TV**
 - A grid guide is the home screen, with a live preview.
 - Groups, Favorites, Recents and All channels; hide or reorder groups, hide channels.
+- "Add all to Favorites" for a whole search result (for example `uk news`) or a whole group; divider entries such as `##### SPORTS #####` are skipped.
 - Fullscreen player with:
   - an info bar showing now/next;
   - a channel-list overlay;
@@ -43,6 +44,12 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 **Everything else**
 - Unified search across channels, movies, series and programmes on air in the next 24 hours.
 - Parental PIN: lock channels or groups (with a brute-force lockout), and protect settings.
+- Back behaves predictably everywhere: it closes the innermost thing first (keyboard, overlay, groups panel, category list), returns to Live TV from other tabs, and only then asks to exit. Forms ask before discarding typing.
+
+**Your data**
+- Playlists, favorites, hidden/locked/reordered groups, watch progress, recents and settings are kept in a small backup copy that the core rewrites whenever they change. If the app starts with an empty database, it restores from that copy and re-syncs the channels.
+- **Apple TV:** the database has to live in Caches (a real Apple TV doesn't let apps write elsewhere), which tvOS may purge; the backup copy lives in the Keychain, which is never purged and survives reinstalls. iCloud sync is planned once the project has a paid Apple developer account.
+- **Android TV:** the database lives in app storage, which the system doesn't purge. The copy (`files/user-data.json`) is the only thing Android's backup to Google may include, and only when that backup is end-to-end encrypted. Fire TV has no Google backup.
 
 ## Platforms
 
@@ -113,7 +120,7 @@ In a headless tvOS simulator (no audio device), start the server with `--no-audi
 
 Debug builds of the tvOS app accept these launch arguments for testing:
 - `-resetData` removes all sources first (first-run state).
-- `-demoXtream <server>` pre-adds the fixture Xtream account; `-demoUser`/`-demoPass` override its credentials and `-demoM3U <url>` adds a playlist.
+- `-demoXtream <server>` pre-adds the fixture Xtream account; `-demoName`/`-demoUser`/`-demoPass` override its name and credentials and `-demoM3U <url>` adds a playlist.
 - `-debugPlay <url>` opens the system player on a URL; add `-debugLive` for live behaviour.
 - `-playerHUD` shows on-screen player diagnostics.
 
@@ -123,6 +130,21 @@ The tvOS UI tests (`TunerUITests`) drive the Siri Remote against the server:
 cd tvosApp && TEST_RUNNER_SHOTS_DIR=/tmp/shots xcodebuild test -project Tuner.xcodeproj -scheme Tuner \
   -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation) (at 1080p)'
 ```
+
+## Installing on a real Apple TV
+
+Pair the Apple TV with Xcode once (Settings → Remotes and Devices → Remote App and Devices), then build with your signing team. Pass the team on the command line rather than committing it:
+
+```sh
+cd tvosApp && xcodegen generate
+xcodebuild -project Tuner.xcodeproj -scheme Tuner -configuration Release -destination 'id=<device-udid>' \
+  -derivedDataPath /tmp/tuner-dd DEVELOPMENT_TEAM=<team-id> -allowProvisioningUpdates ONLY_ACTIVE_ARCH=YES ARCHS=arm64 build
+xcrun devicectl device install app --device <device-udid> /tmp/tuner-dd/Build/Products/Release-appletvos/Tuner.app
+```
+
+`xcrun devicectl list devices` shows the UDID. With a free Apple ID the signing profile lasts 7 days, after which the app stops launching until it is reinstalled; data is kept. On a real device, UI-test screenshots end up in the `.xcresult` bundle (`xcrun xcresulttool export attachments`), not in `SHOTS_DIR`.
+
+`testLiveAccountFavorites` sets up a real Xtream account on a device and adds its news channels to Favorites; it is skipped unless `TEST_RUNNER_LIVE_XTREAM="server|user|pass"` is set.
 
 ## Testing against real providers
 
@@ -171,8 +193,10 @@ app icon and Top Shelf images from `tools/icons/render.swift`.
 
 | | OK | Hold OK / Menu | Back | Up/Down | Left/Right |
 |-|----|----------------|------|---------|-----------|
-| Guide | Preview, then fullscreen; past programme → catch-up | Context menu | Groups → side menu | Channels | Time |
-| Live player | Channel list | Options (tracks, picture, favorite) | Close overlay → guide | Zap | Info bar |
+| Guide | Preview, then fullscreen; past programme → catch-up | Context menu | Groups → side menu → exit prompt | Channels | Time |
+| Live player | Channel list | Options (tracks, picture, favorite) | Cancel number entry / close overlay → guide (on the channel you were watching) | Zap | Info bar |
+| Movies / Series | Open | Context menu | Grid → category list → side menu → Live TV | Rows | Columns |
+| Movie player | Play/pause | | Hide controls while playing, otherwise leave | | Seek |
 
 On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu acts as Back.
 
