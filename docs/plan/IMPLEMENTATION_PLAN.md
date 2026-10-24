@@ -62,9 +62,13 @@ Toolchain: Kotlin 2.4.21, AGP 9.4.1, Gradle 9.8.2, JDK 17, compileSdk 37, Xcode 
   - fullscreen, zapping, channel list and catch-up;
   - movies and series with resume;
   - search and settings.
-- **tvOS**: these flows were verified with XCUITest on the tvOS 27 simulator: guide, focus navigation, window scrolling, catch-up area, channel list, movies, series, search and settings.
-  - The simulator here runs headless (no Simulator.app with Xcode 27), so its media clock never runs.
-  - AVPlayer loads, buffers and renders the first frame of HLS and MP4, but continuous playback needs a real Apple TV.
+- **tvOS**: verified on the tvOS 27 simulator with XCUITest (Siri Remote) against the fixture server:
+  - onboarding with typed credentials;
+  - guide focus, window scrolling and catch-up;
+  - live preview, fullscreen, zapping and the channel list;
+  - movies with resume;
+  - series, search and settings.
+- The simulator here is headless and has no audio device. Streams with audio fail to start there (AudioQueue -66681), so live tests use the fixture's `--no-audio` mode. Live video-only HLS and MP4 play continuously.
 - **Security review** fixes:
   - parental locks are enforced in the core, including group locks and resume entries, and fail closed;
   - PIN brute-force lockout;
@@ -72,12 +76,13 @@ Toolchain: Kotlin 2.4.21, AGP 9.4.1, Gradle 9.8.2, JDK 17, compileSdk 37, Xcode 
   - ATS configured so plain-HTTP provider APIs work on real domains.
 
 ## Next (v1.x)
-- [ ] 3.7 App icon / top shelf brand assets
+- [x] 3.7 App icon / top shelf brand assets (tools/icons)
 - [ ] Additional playback engine on tvOS for raw MPEG-TS and MKV
 - [ ] Phone-based setup (QR code + LAN web form)
 - [ ] Backup/restore and user-owned sync (iCloud KVS on tvOS, file/WebDAV on Android)
 - [ ] Reminders, manual EPG mapping, channel renaming and reordering
-- [ ] 4.4 Performance pass with 50k-channel and 200 MB EPG fixtures on device
+- [x] 4.4 Performance test (JVM): 50k channels + 200k programmes import in ~5 s, search ~55 ms
+- [ ] Same measurement on a physical Android TV and Apple TV
 
 ## Risks & mitigations
 | Risk | Mitigation |

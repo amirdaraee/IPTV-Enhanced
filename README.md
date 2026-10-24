@@ -113,6 +113,11 @@ cd tvosApp && TEST_RUNNER_SHOTS_DIR=/tmp/shots xcodebuild test -project Tuner.xc
   -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation) (at 1080p)'
 ```
 
+## Icons
+
+`tools/icons/generate.sh` renders the Android TV banner/launcher icon and the tvOS layered
+app icon and Top Shelf images from `tools/icons/render.swift`.
+
 ## Remote controls
 
 | | OK | Hold OK / Menu | Back | Up/Down | Left/Right |

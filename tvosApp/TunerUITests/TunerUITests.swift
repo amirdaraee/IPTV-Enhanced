@@ -173,4 +173,17 @@ final class TunerUITests: XCTestCase {
         press(.select, wait: 10)
         shot("after-add")
     }
+
+    func testSettings() {
+        app.launchArguments = ["-demoXtream", "http://localhost:8900"]
+        app.launch()
+        Thread.sleep(forTimeInterval: 6)
+        press(.up, wait: 1)
+        press(.right, 4, wait: 1.5)
+        press(.down, wait: 1.5)
+        shot("settings")
+        press(.down, 9, wait: 0.5)
+        Thread.sleep(forTimeInterval: 1)
+        shot("settings-parental")
+    }
 }
