@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -484,8 +485,9 @@ private fun GuideRow(
         ) {
             Text(
                 channel.number?.toString() ?: "", style = MaterialTheme.typography.labelMedium,
-                color = if (playing) Palette.Accent else Palette.TextDim, modifier = Modifier.width(34.dp), maxLines = 1,
+                color = if (playing) Palette.Accent else Palette.TextDim, modifier = Modifier.widthIn(min = 34.dp), maxLines = 1, softWrap = false,
             )
+            Spacer(Modifier.width(4.dp))
             Artwork(channel.logo, channel.name, Modifier.size(width = 44.dp, height = 32.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit, fontSize = 11)
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {

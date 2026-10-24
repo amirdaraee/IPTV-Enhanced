@@ -70,6 +70,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
 /** Survives HomeScreen leaving composition (e.g. while a detail screen or player is open). */
 object HomeState {
     var tab by mutableStateOf(Tab.Live)
+    var searchQuery by mutableStateOf("")
 }
 
 /** Left rail (expands when focused) + the selected tab. The guide is the default tab. */

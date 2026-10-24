@@ -274,7 +274,8 @@ struct GuideView: View {
         let focusedRow = model.focusedChannel?.id == ch.id
         return HStack(spacing: 0) {
             HStack(spacing: 14) {
-                Text(ch.number.map { "\($0)" } ?? "").font(.callout).foregroundStyle(playing ? Palette.accent : Palette.textDim).frame(width: 56, alignment: .leading)
+                Text(ch.number.map { "\($0)" } ?? "").font(.callout).foregroundStyle(playing ? Palette.accent : Palette.textDim)
+                    .lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
                 Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16)
                     .frame(width: 70, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {

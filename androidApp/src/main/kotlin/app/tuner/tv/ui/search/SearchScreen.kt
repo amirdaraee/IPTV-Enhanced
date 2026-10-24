@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -18,7 +19,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -55,7 +55,7 @@ import kotlinx.coroutines.launch
 fun SearchScreen(focusRequester: FocusRequester) {
     val nav = LocalNavigator.current
     val scope = rememberCoroutineScope()
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by app.tuner.tv.ui.home.HomeState::searchQuery
     var results by remember { mutableStateOf<SearchResults?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -98,7 +98,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                 if (r.channels.isNotEmpty()) item {
                     SectionTitle("Channels")
                     Spacer(Modifier.height(10.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
                         items(r.channels, key = { it.id }) { ch ->
                             FocusSurface(onClick = { playChannel(ch, r.channels) }, modifier = Modifier.width(200.dp)) {
                                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -113,7 +113,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                 if (r.programmes.isNotEmpty()) item {
                     SectionTitle("On TV")
                     Spacer(Modifier.height(10.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
                         items(r.programmes) { hit ->
                             FocusSurface(onClick = { playChannel(hit.channel, listOf(hit.channel)) }, modifier = Modifier.width(260.dp)) {
                                 Column(Modifier.padding(12.dp)) {
@@ -128,7 +128,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                 if (r.movies.isNotEmpty()) item {
                     SectionTitle("Movies")
                     Spacer(Modifier.height(10.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
                         items(r.movies, key = { it.id }) { m ->
                             Column(Modifier.width(120.dp)) {
                                 FocusSurface(onClick = { nav.push(Screen.MovieDetail(m.id)) }, modifier = Modifier.width(120.dp).height(180.dp), scale = 1.08f) {
@@ -143,7 +143,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                 if (r.series.isNotEmpty()) item {
                     SectionTitle("Series")
                     Spacer(Modifier.height(10.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
                         items(r.series, key = { it.id }) { s ->
                             Column(Modifier.width(120.dp)) {
                                 FocusSurface(onClick = { nav.push(Screen.SeriesDetail(s.id)) }, modifier = Modifier.width(120.dp).height(180.dp), scale = 1.08f) {
@@ -160,3 +160,8 @@ fun SearchScreen(focusRequester: FocusRequester) {
     }
     message?.let { Toast(it) }
 }
+
+// Rows bleed into the page margin so a focused card's scale-up isn't clipped,
+// while the first card stays aligned with the section headings.
+private val RowBleed = Modifier.offset(x = (-12).dp)
+private val RowPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)

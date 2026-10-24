@@ -144,7 +144,7 @@ struct LivePlayerView: View {
                             tune(ch, index: idx)
                         } label: {
                             HStack(spacing: 16) {
-                                Text(ch.number.map { "\($0)" } ?? "").foregroundStyle(Palette.textDim).frame(width: 56, alignment: .leading)
+                                Text(ch.number.map { "\($0)" } ?? "").foregroundStyle(Palette.textDim).lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
                                 Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14)
                                     .frame(width: 64, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
                                 VStack(alignment: .leading, spacing: 2) {

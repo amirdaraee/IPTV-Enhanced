@@ -23,7 +23,8 @@ fun VideoSurface(modifier: Modifier = Modifier, resizeMode: Int = AspectRatioFra
         (LayoutInflater.from(context).inflate(R.layout.player_surface, null) as PlayerView).apply {
             useController = false
             setShutterBackgroundColor(android.graphics.Color.BLACK)
-            setKeepContentOnPlayerReset(true)
+            // Black until the new stream renders, so zapping never shows the previous channel.
+            setKeepContentOnPlayerReset(false)
             isFocusable = false
             isFocusableInTouchMode = false
         }

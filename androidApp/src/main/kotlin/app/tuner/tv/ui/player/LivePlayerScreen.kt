@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -376,7 +377,7 @@ private fun ChannelListOverlay(
                     scale = 1.02f,
                 ) {
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(ch.number?.toString() ?: "", color = Palette.TextDim, modifier = Modifier.width(40.dp), fontSize = 13.sp)
+                        Text(ch.number?.toString() ?: "", color = Palette.TextDim, modifier = Modifier.widthIn(min = 40.dp).padding(end = 4.dp), fontSize = 13.sp, maxLines = 1, softWrap = false)
                         Artwork(ch.logo, ch.name, Modifier.size(width = 44.dp, height = 30.dp), contentScale = ContentScale.Fit, fontSize = 11)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {

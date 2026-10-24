@@ -35,14 +35,29 @@ final class AppModel: ObservableObject {
 
     #if DEBUG
     /// UI tests pass `-demoXtream <server>` to start with the local fixture server configured.
+    /// `-demoUser`/`-demoPass` override the fixture credentials and `-demoM3U <url>` adds a playlist,
+    /// so real providers can be loaded into a simulator without typing on the on-screen keyboard.
     private func addDemoSourceIfRequested() async {
         let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-demoXtream"), i + 1 < args.count,
-              (try? await core.hasSources())?.boolValue != true else { return }
-        let input = SourceInput(name: "Demo", type: .xtream, url: args[i + 1], username: "demo", password: "secret",
-                                epgUrls: [], userAgent: nil, epgOffsetMinutes: 0, refreshHours: 24, enabled: true)
-        if let id = try? await core.addSource(input: input) {
-            _ = try? await core.refreshNow(sourceId: id.int64Value)
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        guard (try? await core.hasSources())?.boolValue != true else { return }
+        var inputs: [SourceInput] = []
+        if let server = value("-demoXtream") {
+            inputs.append(SourceInput(name: "Demo", type: .xtream, url: server, username: value("-demoUser") ?? "demo",
+                                      password: value("-demoPass") ?? "secret", epgUrls: [], userAgent: nil,
+                                      epgOffsetMinutes: 0, refreshHours: 24, enabled: true))
+        }
+        if let url = value("-demoM3U") {
+            inputs.append(SourceInput(name: "Playlist", type: .m3u, url: url, username: nil, password: nil, epgUrls: [],
+                                      userAgent: nil, epgOffsetMinutes: 0, refreshHours: 24, enabled: true))
+        }
+        for input in inputs {
+            if let id = try? await core.addSource(input: input) {
+                _ = try? await core.refreshNow(sourceId: id.int64Value)
+            }
         }
     }
     #endif
