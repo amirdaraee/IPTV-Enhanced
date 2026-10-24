@@ -37,6 +37,7 @@ import app.tuner.core.model.SyncState
 import app.tuner.tv.core
 import app.tuner.tv.ui.LocalNavigator
 import app.tuner.tv.ui.Screen
+import app.tuner.tv.ui.components.ConfirmDialog
 import app.tuner.tv.ui.components.Dim
 import app.tuner.tv.ui.components.FocusSurface
 import app.tuner.tv.ui.components.LoadingDots
@@ -66,12 +67,16 @@ fun SourceEditScreen(sourceId: Long?) {
     var sync by remember { mutableStateOf<SyncState?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     val firstFocus = remember { FocusRequester() }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    fun form() = listOf(type, name, url, username, password, epgUrl, userAgent, offsetHours)
+    var saved by remember { mutableStateOf(form()) }
 
     LaunchedEffect(sourceId) {
         if (sourceId != null) {
             core.source(sourceId)?.let { s ->
                 type = s.type; name = s.name; url = s.url; username = s.username.orEmpty(); password = s.password.orEmpty()
                 epgUrl = s.epgUrls.joinToString(", "); userAgent = s.userAgent.orEmpty(); offsetHours = (s.epgOffsetMinutes / 60.0).toString().removeSuffix(".0")
+                saved = form()
             }
         }
         runCatching { firstFocus.requestFocus() }
@@ -94,7 +99,12 @@ fun SourceEditScreen(sourceId: Long?) {
             }
         }
     }
-    BackHandler(enabled = !busy) { if (!nav.pop()) nav.reset(Screen.Welcome) }
+    fun leave() { if (!nav.pop()) nav.reset(Screen.Welcome) }
+    // Back is easy to press by accident on a remote; don't silently throw away typing.
+    BackHandler(enabled = !busy) { if (form() != saved) confirmDiscard = true else leave() }
+    if (confirmDiscard) {
+        ConfirmDialog("Discard changes?", "What you entered on this screen will be lost.", "Discard", onConfirm = ::leave, onDismiss = { confirmDiscard = false })
+    }
 
     fun input() = SourceInput(
         name = name.ifBlank { if (type == SourceType.XTREAM) url.substringAfter("://").substringBefore(':').substringBefore('/') else "Playlist" },
@@ -192,7 +202,7 @@ fun SourceEditScreen(sourceId: Long?) {
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PrimaryButton(if (sourceId == null) "Add playlist" else "Save", onClick = ::save)
-                    PrimaryButton("Cancel", onClick = { if (!nav.pop()) nav.reset(Screen.Welcome) })
+                    PrimaryButton("Cancel", onClick = ::leave)
                 }
             }
             Spacer(Modifier.height(80.dp))

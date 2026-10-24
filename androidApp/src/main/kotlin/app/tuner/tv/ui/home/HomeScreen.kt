@@ -49,6 +49,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import app.tuner.core.model.SyncState
 import app.tuner.tv.core
+import app.tuner.tv.playerController
 import app.tuner.tv.ui.components.ConfirmDialog
 import app.tuner.tv.ui.components.FocusSurface
 import app.tuner.tv.ui.guide.GuideScreen
@@ -92,7 +93,10 @@ fun HomeScreen(onExit: () -> Unit) {
         runCatching { contentFocus.requestFocus() }
     }
 
-    BackHandler(enabled = railFocused) { confirmExit = true }
+    // Back on the side menu goes home to Live TV first, then asks to exit.
+    BackHandler(enabled = railFocused) {
+        if (tab != Tab.Live) runCatching { tabFocus.getValue(Tab.Live).requestFocus() } else confirmExit = true
+    }
     BackHandler(enabled = !railFocused && tab != Tab.Live) { runCatching { tabFocus.getValue(tab).requestFocus() } }
 
     Box(Modifier.fillMaxSize().background(Palette.Background)) {
@@ -163,6 +167,6 @@ fun HomeScreen(onExit: () -> Unit) {
     }
 
     if (confirmExit) {
-        ConfirmDialog("Exit Tuner?", "Playback will stop.", "Exit", onConfirm = onExit, onDismiss = { confirmExit = false })
+        ConfirmDialog("Exit Tuner?", if (playerController.current != null) "Playback will stop." else "", "Exit", onConfirm = onExit, onDismiss = { confirmExit = false })
     }
 }

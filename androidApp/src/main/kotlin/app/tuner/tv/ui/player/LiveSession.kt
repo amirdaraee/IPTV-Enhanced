@@ -9,6 +9,8 @@ object LiveSession {
         private set
     var index: Int = 0
     var pendingRequest: PlaybackRequest? = null
+    /** Channel the player was on when the user backed out; the guide focuses it once. */
+    var returnTo: Long? = null
 
     fun start(lineup: List<Channel>, channel: Channel, request: PlaybackRequest) {
         channels = lineup.ifEmpty { listOf(channel) }

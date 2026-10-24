@@ -205,9 +205,10 @@ fun LivePlayerScreen() {
 
     BackHandler {
         when {
+            numberEntry.isNotEmpty() -> numberEntry = ""
             showList -> showList = false
             showInfo -> { infoJob?.cancel(); showInfo = false }
-            else -> nav.pop()
+            else -> { LiveSession.returnTo = LiveSession.channel?.id; nav.pop() }
         }
     }
 

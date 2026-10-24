@@ -1,5 +1,6 @@
 package app.tuner.tv.ui.vod
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +55,7 @@ import app.tuner.tv.ui.components.PinDialog
 import app.tuner.tv.ui.components.ProgressBar
 import app.tuner.tv.ui.player.VodSession
 import app.tuner.tv.ui.theme.Palette
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -99,9 +103,25 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
         return
     }
 
+    // The selected category is the screen's entry point (from the side menu and from Back in
+    // the grid), so it must stay composed: start the list scrolled to it.
+    val selectedIndex = vm.groups.indexOfFirst { it.id == vm.group?.id }.coerceAtLeast(0)
+    val categoryState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
+    var gridFocused by remember { mutableStateOf(false) }
+    BackHandler(enabled = gridFocused) {
+        scope.launch {
+            if (categoryState.layoutInfo.visibleItemsInfo.none { it.index == selectedIndex + 1 }) {
+                categoryState.scrollToItem((selectedIndex - 3).coerceAtLeast(0))
+                delay(50)
+            }
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+
     Row(Modifier.fillMaxSize().background(Palette.Background)) {
         LazyColumn(
             Modifier.width(240.dp).fillMaxHeight().padding(top = 24.dp, start = 16.dp, end = 8.dp),
+            state = categoryState,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             item {
@@ -114,7 +134,7 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
                 val selected = g.id == vm.group?.id
                 FocusSurface(
                     onClick = { if (core.isAllowed(g.locked)) vm.select(g) else gate = { vm.select(g) } },
-                    modifier = Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(focusRequester) else Modifier),
+                    modifier = Modifier.fillMaxWidth().then(if (i == selectedIndex) Modifier.focusRequester(focusRequester) else Modifier),
                     color = if (selected) Palette.SurfaceHigh else Color.Transparent,
                     scale = 1.02f,
                 ) {
@@ -133,7 +153,7 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
         )
         LaunchedEffect(Unit) {
             if (vm.lastOpenedId != null) {
-                kotlinx.coroutines.delay(250) // after HomeScreen's initial focus request
+                delay(250) // after HomeScreen's initial focus request
                 runCatching { returnFocus.requestFocus() }
             }
         }
@@ -151,7 +171,7 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(132.dp),
                 state = gridState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().onFocusChanged { gridFocused = it.hasFocus },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 32.dp, top = 28.dp, bottom = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),

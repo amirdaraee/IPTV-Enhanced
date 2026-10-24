@@ -91,7 +91,9 @@ fun VodPlayerScreen() {
     }
 
     BackHandler {
-        if (view.isControllerFullyVisible) view.hideController() else nav.pop()
+        // Paused, buffering or failed, Media3 keeps the controls up and re-shows them, so
+        // hiding them would just eat the press: leave instead.
+        if (view.isControllerFullyVisible && player.isPlaying) view.hideController() else nav.pop()
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {

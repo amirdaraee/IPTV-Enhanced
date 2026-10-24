@@ -90,8 +90,10 @@ fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: ()
     DialogFrame(onDismiss) {
         Column {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
-            Spacer(Modifier.height(8.dp))
-            Text(message, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
+            if (message.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(message, style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
+            }
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PrimaryButton(confirm, onClick = { onDismiss(); onConfirm() }, modifier = Modifier.focusRequester(focus))

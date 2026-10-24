@@ -112,6 +112,13 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val groupsFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
+    var hasFocus by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val id = LiveSession.returnTo ?: return@LaunchedEffect
+        LiveSession.returnTo = null
+        vm.channels.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { vm.row = it }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -160,7 +167,7 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Palette.Background)) {
+    Box(Modifier.fillMaxSize().background(Palette.Background).onFocusChanged { hasFocus = it.hasFocus }) {
         Column(Modifier.fillMaxSize()) {
             GuideHeader(vm, now)
             if (vm.loaded && vm.channels.isEmpty()) {
@@ -213,8 +220,8 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
         }
         leavingToMenu = false
     }
-    BackHandler(enabled = showGroups) { leavingToMenu = true; showGroups = false; onExitLeft() }
-    BackHandler(enabled = !showGroups) { showGroups = true }
+    BackHandler(enabled = hasFocus && showGroups) { leavingToMenu = true; showGroups = false; onExitLeft() }
+    BackHandler(enabled = hasFocus && !showGroups) { showGroups = true }
 
     menuFor?.let { (ch, p) ->
         val t = System.currentTimeMillis()
