@@ -28,9 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -196,6 +198,7 @@ fun TvTextField(
     var editing by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val shape = RoundedCornerShape(8.dp)
     LaunchedEffect(editing) { if (editing) keyboard?.show() else keyboard?.hide() }
     Column(modifier) {
@@ -222,7 +225,16 @@ fun TvTextField(
                 }
                 .onPreviewKeyEvent { e ->
                     val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+                    val direction = when (e.key) {
+                        Key.DirectionLeft -> FocusDirection.Left
+                        Key.DirectionRight -> FocusDirection.Right
+                        Key.DirectionUp -> FocusDirection.Up
+                        Key.DirectionDown -> FocusDirection.Down
+                        else -> null
+                    }
                     when {
+                        // Not editing: arrows navigate instead of moving the text cursor.
+                        !editing && direction != null -> { if (e.type == KeyEventType.KeyDown) focusManager.moveFocus(direction); true }
                         !editing && ok && e.type == KeyEventType.KeyUp -> { editing = true; true }
                         !editing && ok -> true
                         editing && e.key == Key.Back && e.type == KeyEventType.KeyUp -> { editing = false; true }

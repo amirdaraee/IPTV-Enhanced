@@ -78,20 +78,24 @@ abstract class VodViewModel(private val kind: ContentKind) : ViewModel() {
 
     private suspend fun load(g: Group?) {
         group = g
-        endReached = false
+        endReached = true // blocks loadMore until the first page is in
         val page = fetch(g, 0)
-        items = page
-        if (page.size < PAGE) endReached = true
+        if (group?.id != g?.id) return
+        items = page.distinctBy { it.id }
+        endReached = page.size < PAGE
         loaded = true
     }
 
     fun loadMore() {
         if (endReached || loadingMore) return
         loadingMore = true
+        val g = group
         viewModelScope.launch {
-            val more = fetch(group, items.size)
-            if (more.size < PAGE) endReached = true
-            items = items + more
+            val more = fetch(g, items.size)
+            if (group?.id == g?.id) {
+                if (more.size < PAGE) endReached = true
+                items = (items + more).distinctBy { it.id }
+            }
             loadingMore = false
         }
     }
