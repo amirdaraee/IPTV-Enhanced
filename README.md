@@ -106,6 +106,13 @@ To connect:
 - **Android emulator:** use `http://10.0.2.2:8900`.
 - **tvOS simulator:** use `http://localhost:8900`.
 
+In a headless tvOS simulator (no audio device), start the server with `--no-audio`. AVPlayer can't start streams that carry audio there (CoreMedia error -66681); video-only streams play normally.
+
+Debug builds of the tvOS app accept these launch arguments for testing:
+- `-demoXtream <server>` pre-adds the fixture Xtream account.
+- `-debugPlay <url>` opens the system player on a URL; add `-debugLive` for live behaviour.
+- `-playerHUD` shows on-screen player diagnostics.
+
 The tvOS UI tests (`TunerUITests`) drive the Siri Remote against the server:
 
 ```sh
