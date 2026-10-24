@@ -26,7 +26,13 @@ kotlin {
         }
     }
 
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
+        val jvmAndroidMain by creating { dependsOn(commonMain.get()) }
+        androidMain.get().dependsOn(jvmAndroidMain)
+        jvmMain.get().dependsOn(jvmAndroidMain)
+
         commonMain.dependencies {
             implementation(libs.coroutines.core)
             implementation(libs.serialization.json)
