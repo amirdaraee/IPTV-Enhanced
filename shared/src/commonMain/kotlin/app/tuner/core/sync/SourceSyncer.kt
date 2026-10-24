@@ -14,8 +14,7 @@ import app.tuner.core.util.searchNorm
 import app.tuner.core.xtream.XtreamClient
 import app.tuner.core.xtream.XtreamCredentials
 import io.ktor.client.HttpClient
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
 
 internal fun interface ProgressSink {
     fun report(phase: String, count: Int)
@@ -158,60 +157,62 @@ internal class SourceSyncer(
         db.sourceQueries.setAutoEpg(client.xmltvUrl, source.id)
 
         progress.report("Downloading lineup", 0)
-        coroutineScope {
-            val liveCats = async { client.categories(ContentKind.LIVE) }
-            val vodCats = async { client.categories(ContentKind.MOVIE) }
-            val seriesCats = async { client.categories(ContentKind.SERIES) }
-            val live = async { client.streams(ContentKind.LIVE) }
-            val vod = async { runCatching { client.streams(ContentKind.MOVIE) }.getOrDefault(emptyList()) }
-            val series = async { runCatching { client.series() }.getOrDefault(emptyList()) }
+        val liveCats = client.categories(ContentKind.LIVE)
+        val vodCats = client.categories(ContentKind.MOVIE)
+        val seriesCats = client.categories(ContentKind.SERIES)
 
-            fun cats(kind: ContentKind, list: List<app.tuner.core.xtream.XtreamCategory>, used: Set<String?>) {
-                db.transaction {
-                    list.forEachIndexed { i, c -> catalog.insertCategory(staging, kind.name, c.id, c.name, i.toLong()) }
-                    if (null in used || used.any { id -> list.none { it.id == id } }) {
-                        catalog.insertCategory(staging, kind.name, UNCATEGORIZED, UNCATEGORIZED, list.size.toLong())
-                    }
+        fun cats(kind: ContentKind, list: List<app.tuner.core.xtream.XtreamCategory>, used: Set<String?>) {
+            db.transaction {
+                list.forEachIndexed { i, c -> catalog.insertCategory(staging, kind.name, c.id, c.name, i.toLong()) }
+                if (null in used || used.any { id -> list.none { it.id == id } }) {
+                    catalog.insertCategory(staging, kind.name, UNCATEGORIZED, UNCATEGORIZED, list.size.toLong())
                 }
             }
+        }
 
-            val liveList = live.await()
-            cats(ContentKind.LIVE, liveCats.await(), liveList.mapTo(HashSet()) { it.categoryId })
-            var count = 0
-            liveList.chunked(BATCH).forEach { chunk ->
-                db.transaction {
-                    for (s in chunk) {
-                        count++
-                        catalog.insertChannel(
-                            source_id = staging,
-                            ckey = s.id,
-                            category_key = s.categoryId ?: UNCATEGORIZED,
-                            name = s.name,
-                            name_norm = searchNorm(s.name),
-                            number = (s.num ?: count).toLong(),
-                            logo = s.icon,
-                            epg_id = s.epgChannelId,
-                            url = client.streamUrl(ContentKind.LIVE, s.id, liveExt),
-                            remote_id = s.id,
-                            catchup_mode = if (s.hasArchive) CatchupMode.XTREAM.name else CatchupMode.NONE.name,
-                            catchup_days = if (s.hasArchive) s.archiveDays.coerceAtLeast(1).toLong() else 0,
-                            catchup_source = null,
-                            user_agent = source.userAgent,
-                            referrer = null,
-                            position = count.toLong(),
-                        )
-                    }
+        // Catalogs are streamed one at a time and written in batches as they arrive,
+        // so memory stays flat however large the provider is.
+        val usedLive = HashSet<String?>()
+        var count = 0
+        client.streams(ContentKind.LIVE) { batch ->
+            db.transaction {
+                for (s in batch) {
+                    count++
+                    usedLive += s.categoryId
+                    catalog.insertChannel(
+                        source_id = staging,
+                        ckey = s.id,
+                        category_key = s.categoryId ?: UNCATEGORIZED,
+                        name = s.name,
+                        name_norm = searchNorm(s.name),
+                        number = (s.num ?: count).toLong(),
+                        logo = s.icon,
+                        epg_id = s.epgChannelId,
+                        url = client.streamUrl(ContentKind.LIVE, s.id, liveExt),
+                        remote_id = s.id,
+                        catchup_mode = if (s.hasArchive) CatchupMode.XTREAM.name else CatchupMode.NONE.name,
+                        catchup_days = if (s.hasArchive) s.archiveDays.coerceAtLeast(1).toLong() else 0,
+                        catchup_source = null,
+                        user_agent = source.userAgent,
+                        referrer = null,
+                        position = count.toLong(),
+                    )
                 }
-                progress.report("Channels", count)
             }
+            progress.report("Channels", count)
+        }
+        cats(ContentKind.LIVE, liveCats, usedLive)
 
-            val vodList = vod.await()
-            cats(ContentKind.MOVIE, vodCats.await(), vodList.mapTo(HashSet()) { it.categoryId })
-            var vodCount = 0
-            vodList.chunked(BATCH).forEach { chunk ->
+        // Movies and series are optional extras: a provider failing them must not
+        // fail the live lineup. Whatever arrived before an error is kept.
+        val usedVod = HashSet<String?>()
+        var vodCount = 0
+        optional {
+            client.streams(ContentKind.MOVIE) { batch ->
                 db.transaction {
-                    for (m in chunk) {
+                    for (m in batch) {
                         vodCount++
+                        usedVod += m.categoryId
                         catalog.insertMovie(
                             source_id = staging,
                             ckey = m.id,
@@ -230,14 +231,17 @@ internal class SourceSyncer(
                 }
                 progress.report("Movies", vodCount)
             }
+        }
+        cats(ContentKind.MOVIE, vodCats, usedVod)
 
-            val seriesList = series.await()
-            cats(ContentKind.SERIES, seriesCats.await(), seriesList.mapTo(HashSet()) { it.categoryId })
-            var seriesCount = 0
-            seriesList.chunked(BATCH).forEach { chunk ->
+        val usedSeries = HashSet<String?>()
+        var seriesCount = 0
+        optional {
+            client.series { batch ->
                 db.transaction {
-                    for (s in chunk) {
+                    for (s in batch) {
                         seriesCount++
+                        usedSeries += s.categoryId
                         catalog.insertSeries(
                             source_id = staging,
                             ckey = s.id,
@@ -256,6 +260,17 @@ internal class SourceSyncer(
                 }
                 progress.report("Series", seriesCount)
             }
+        }
+        cats(ContentKind.SERIES, seriesCats, usedSeries)
+    }
+
+    private suspend fun optional(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // keep the partial catalog
         }
     }
 

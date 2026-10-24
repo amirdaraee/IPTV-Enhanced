@@ -97,4 +97,32 @@ class ParserTest {
         assertEquals(1_792_843_200_000L, parseXmltvTime("20261024120000 +0000"))
         assertEquals(1_792_843_200_000L, parseXmltvTime("20261024073000 -0430"))
     }
+
+    @Test
+    fun classifiesContentKind() {
+        assertEquals(ContentKind.MOVIE, M3uParser.classify("http://p/movie/u/p/1.mkv", "Films"))
+        assertEquals(ContentKind.SERIES, M3uParser.classify("http://p/series/u/p/2.mp4", "Any"))
+        assertEquals(ContentKind.SERIES, M3uParser.classify("http://p/x/3.mp4", "TV Shows"))
+        assertEquals(ContentKind.MOVIE, M3uParser.classify("http://p/x/4.mp4?token=1", "Cinema"))
+        assertEquals(ContentKind.LIVE, M3uParser.classify("http://p/live/u/p/5.mp4", "Movies"))
+        assertEquals(ContentKind.LIVE, M3uParser.classify("https://cdn/play/live_a.flv", "Undefined"))
+        assertEquals(ContentKind.LIVE, M3uParser.classify("http://p/6.m3u8", "Movies"))
+    }
+
+    @Test
+    fun splitsJsonObjectsInChunks() {
+        val doc = """[{"a":"x{y}","b":[1,{"n":2}]}, {"s":"q\\\"}"}, 3, {"big":"${"z".repeat(100)}"}]"""
+        val objectDoc = """{"1":{"id":1},"2":{"id":2,"e":{}}}"""
+        for (chunk in listOf(1, 3, 7, 1000)) {
+            val got = ArrayList<String>()
+            val splitter = app.tuner.core.io.JsonObjectSplitter(maxObjectChars = 64) { got += it }
+            doc.chunked(chunk).forEach { splitter.feed(it.toCharArray(), it.length) }
+            assertEquals(listOf("""{"a":"x{y}","b":[1,{"n":2}]}""", """{"s":"q\\\"}"}"""), got, "chunk=$chunk")
+
+            val got2 = ArrayList<String>()
+            val s2 = app.tuner.core.io.JsonObjectSplitter { got2 += it }
+            objectDoc.chunked(chunk).forEach { s2.feed(it.toCharArray(), it.length) }
+            assertEquals(listOf("""{"id":1}""", """{"id":2,"e":{}}"""), got2)
+        }
+    }
 }

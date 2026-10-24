@@ -2,16 +2,22 @@ package app.tuner.core.xtream
 
 import app.tuner.core.model.ContentKind
 import io.ktor.client.HttpClient
-import io.ktor.client.request.get
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.utils.io.readAvailable
+import app.tuner.core.io.JsonObjectSplitter
+import app.tuner.core.io.TextPipeline
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.coroutines.delay
 import kotlinx.datetime.TimeZone
 import kotlin.io.encoding.Base64
 import kotlin.math.roundToLong
@@ -139,20 +145,71 @@ class XtreamClient(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    private suspend fun call(action: String?, vararg params: Pair<String, Any?>): JsonElement {
-        val response = http.get("${credentials.server}/player_api.php") {
-            parameter("username", credentials.username)
-            parameter("password", credentials.password)
-            if (action != null) parameter("action", action)
-            params.forEach { (k, v) -> if (v != null) parameter(k, v) }
-            userAgent?.let { header(HttpHeaders.UserAgent, it) }
+    /**
+     * Runs one player_api.php request and hands the successful response to [read]
+     * while the body is still streaming.
+     */
+    private suspend fun <T> request(action: String?, params: Array<out Pair<String, Any?>>, read: suspend (HttpResponse) -> T): T {
+        var attempt = 0
+        while (true) {
+            val statement = http.prepareGet("${credentials.server}/player_api.php") {
+                parameter("username", credentials.username)
+                parameter("password", credentials.password)
+                if (action != null) parameter("action", action)
+                params.forEach { (k, v) -> if (v != null) parameter(k, v) }
+                userAgent?.let { header(HttpHeaders.UserAgent, it) }
+            }
+            val outcome: Result<T>? = statement.execute { response ->
+                val status = response.status.value
+                when {
+                    // Many panels throttle repeated logins (verify, then sync a second later)
+                    // by answering 404/429/503 for a few seconds, so back off and retry.
+                    status in THROTTLED && attempt < RETRY_DELAYS_MS.size -> null
+                    !response.status.isSuccess() -> Result.failure(XtreamException("Server returned HTTP $status"))
+                    else -> Result.success(read(response))
+                }
+            }
+            if (outcome != null) return outcome.getOrThrow()
+            delay(RETRY_DELAYS_MS[attempt++])
         }
-        if (!response.status.isSuccess()) throw XtreamException("Server returned HTTP ${response.status.value}")
-        val text = response.bodyAsText()
+    }
+
+    private suspend fun call(action: String?, vararg params: Pair<String, Any?>): JsonElement {
+        val text = request(action, params) { it.bodyAsText() }
         return try {
             json.parseToJsonElement(text.ifBlank { "[]" })
         } catch (e: Exception) {
             throw XtreamException("Server did not return valid JSON")
+        }
+    }
+
+    /**
+     * Streams a list action object by object, so catalogs of any size are never held
+     * in memory. Objects are parsed as they arrive and passed to [onBatch] between
+     * network reads, where the caller writes them to the database.
+     */
+    private suspend fun <T> streamObjects(action: String, map: (JsonObject) -> T?, onBatch: suspend (List<T>) -> Unit) {
+        request(action, emptyArray()) { response ->
+            val pending = ArrayList<T>()
+            val splitter = JsonObjectSplitter { text ->
+                val o = runCatching { json.parseToJsonElement(text) }.getOrNull() as? JsonObject
+                o?.let(map)?.let(pending::add)
+            }
+            val pipeline = TextPipeline(splitter::feed)
+            val channel = response.bodyAsChannel()
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val n = channel.readAvailable(buffer, 0, buffer.size)
+                if (n < 0) break
+                if (n == 0) continue
+                pipeline.feed(buffer, 0, n)
+                if (pending.size >= STREAM_BATCH) {
+                    onBatch(pending.toList())
+                    pending.clear()
+                }
+            }
+            pipeline.finish()
+            if (pending.isNotEmpty()) onBatch(pending.toList())
         }
     }
 
@@ -188,31 +245,35 @@ class XtreamClient(
         }
     }
 
-    suspend fun streams(kind: ContentKind): List<XtreamStream> {
+    suspend fun streams(kind: ContentKind, onBatch: suspend (List<XtreamStream>) -> Unit) {
         require(kind != ContentKind.SERIES)
         val action = if (kind == ContentKind.LIVE) "get_live_streams" else "get_vod_streams"
-        return call(action).asObjects().mapNotNull { o ->
-            val id = o.str("stream_id") ?: return@mapNotNull null
-            XtreamStream(
-                id = id,
-                num = o.int("num"),
-                name = o.str("name") ?: id,
-                icon = o.str("stream_icon"),
-                epgChannelId = o.str("epg_channel_id"),
-                categoryId = o.str("category_id"),
-                added = o.long("added")?.let { it * 1000 },
-                hasArchive = o.bool("tv_archive"),
-                archiveDays = o.int("tv_archive_duration") ?: 0,
-                containerExtension = o.str("container_extension"),
-                rating = o.double("rating"),
-                directSource = o.str("direct_source"),
-            )
-        }
+        streamObjects(action, ::parseStream, onBatch)
     }
 
-    suspend fun series(): List<XtreamSeries> = call("get_series").asObjects().mapNotNull { o ->
-        val id = o.str("series_id") ?: return@mapNotNull null
-        XtreamSeries(
+    private fun parseStream(o: JsonObject): XtreamStream? {
+        val id = o.str("stream_id") ?: return null
+        return XtreamStream(
+            id = id,
+            num = o.int("num"),
+            name = o.str("name") ?: id,
+            icon = o.str("stream_icon"),
+            epgChannelId = o.str("epg_channel_id"),
+            categoryId = o.str("category_id"),
+            added = o.long("added")?.let { it * 1000 },
+            hasArchive = o.bool("tv_archive"),
+            archiveDays = o.int("tv_archive_duration") ?: 0,
+            containerExtension = o.str("container_extension"),
+            rating = o.double("rating"),
+            directSource = o.str("direct_source"),
+        )
+    }
+
+    suspend fun series(onBatch: suspend (List<XtreamSeries>) -> Unit) = streamObjects("get_series", ::parseSeries, onBatch)
+
+    private fun parseSeries(o: JsonObject): XtreamSeries? {
+        val id = o.str("series_id") ?: return null
+        return XtreamSeries(
             id = id,
             name = o.str("name") ?: id,
             cover = o.str("cover"),
@@ -313,6 +374,10 @@ class XtreamClient(
     }
 
     companion object {
+        private val THROTTLED = setOf(404, 429, 503)
+        private val RETRY_DELAYS_MS = longArrayOf(2_000, 4_000)
+        private const val STREAM_BATCH = 500
+
         internal fun enc(s: String): String = buildString {
             for (b in s.encodeToByteArray()) {
                 val c = b.toInt().toChar()

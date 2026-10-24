@@ -227,4 +227,24 @@ class CoreEndToEndTest {
         assertEquals(listOf("news.one", "sports"), channels.map { it.epgKey })
         assertEquals(listOf("http://epg.test/xmltv.php"), core.source(id)!!.autoEpgUrls)
     }
+
+    @Test
+    fun xtreamLoginThrottleIsRetried() = runBlocking {
+        var logins = 0
+        val inner = engine()
+        val throttling = MockEngine { req ->
+            if (req.url.encodedPath.endsWith("player_api.php") && req.url.parameters["action"] == null && logins++ == 1) {
+                respond("", HttpStatusCode.NotFound)
+            } else {
+                inner.config.requestHandlers.first()(this, req)
+            }
+        }
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        TunerDatabase.Schema.create(driver)
+        val core = TunerCore(driver, HttpClient(throttling))
+        core.verifyXtream("demo.test:8080", "u", "p")
+        val id = core.addSource(SourceInput("Demo", SourceType.XTREAM, "demo.test:8080", "u", "p"))
+        assertNull(core.refreshNow(id), "second login answered 404 once, then succeeded")
+        assertEquals(3, logins)
+    }
 }

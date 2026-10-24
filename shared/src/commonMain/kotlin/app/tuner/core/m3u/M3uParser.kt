@@ -170,12 +170,14 @@ class M3uParser(
     }
 
     companion object {
-        private val VOD_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "m4v", "wmv", "flv", "webm")
+        // flv is left out: over HTTP it is almost always a live stream
+        private val VOD_EXTENSIONS = setOf("mp4", "mkv", "avi", "mov", "m4v", "wmv", "webm")
 
         fun classify(url: String, group: String): ContentKind {
             val path = url.substringBefore('?').lowercase()
             if ("/series/" in path) return ContentKind.SERIES
             if ("/movie/" in path) return ContentKind.MOVIE
+            if ("/live/" in path) return ContentKind.LIVE
             val ext = path.substringAfterLast('.', "")
             if (ext in VOD_EXTENSIONS) {
                 val g = group.lowercase()
