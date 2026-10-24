@@ -368,3 +368,17 @@ WHERE se.source_id = ? AND se.ckey = ?;
 
 groupLocked:
 SELECT locked FROM group_pref WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+-- ---------- user data backup ----------
+
+allItemPrefs:
+SELECT * FROM item_pref WHERE favorite = 1 OR hidden = 1 OR locked = 1;
+
+restoreItemPref:
+INSERT OR REPLACE INTO item_pref(source_id, kind, ckey, favorite, favorite_at, hidden, locked) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+allGroupPrefs:
+SELECT * FROM group_pref WHERE hidden = 1 OR locked = 1 OR custom_position IS NOT NULL;
+
+restoreGroupPref:
+INSERT OR REPLACE INTO group_pref(source_id, kind, ckey, hidden, locked, custom_position) VALUES (?, ?, ?, ?, ?, ?);

@@ -79,7 +79,13 @@ Toolchain: Kotlin 2.4.21, AGP 9.4.1, Gradle 9.8.2, JDK 17, compileSdk 37, Xcode 
 - [x] 3.7 App icon / top shelf brand assets (tools/icons)
 - [ ] Additional playback engine on tvOS for raw MPEG-TS and MKV
 - [ ] Phone-based setup (QR code + LAN web form)
-- [ ] Backup/restore and user-owned sync (iCloud KVS on tvOS, file/WebDAV on Android)
+- [x] 4.5 User-data backup: `UserDataBackup` snapshot (playlists, favorites, group prefs, progress, recents, settings) kept current by the core and restored into an empty database. tvOS: Keychain (the database lives in Caches, which tvOS may purge). Android: `files/user-data.json`, the only file Android backup to Google includes (Fire TV has no Google backup)
+- [ ] **iCloud on tvOS (needs the paid Apple Developer Program; free teams can't enable iCloud):**
+  1. Enable the iCloud capability with *Key-value storage* for `app.tuner.tv` (entitlement `com.apple.developer.ubiquity-kvstore-identifier`) and set `DEVELOPMENT_TEAM` in `project.yml`.
+  2. Add `CloudBackup: UserDataBackup` in Swift wrapping `NSUbiquitousKeyValueStore`: `save` writes the snapshot to one key (limit 1 MB per store, 1 MB per value; the snapshot is ~10–100 KB) and keeps the Keychain copy too; `load` prefers whichever copy is newer (add a `savedAt` field to `UserSnapshot`, format version 2).
+  3. Observe `NSUbiquitousKeyValueStore.didChangeExternallyNotification` so a second Apple TV picks up favorites added on the first; merging needs a core `importUserData(json)` that upserts prefs into an existing database (today's restore only fills an empty one).
+  4. Consider moving passwords out of the iCloud copy (Keychain only) unless iCloud Keychain sync is wanted.
+- [ ] Copy playlists and favorites between TVs on the same Wi-Fi (Apple TV ↔ Fire TV), using `exportUserData()` plus the import from step 3; also a way to restore on Fire TV
 - [ ] Reminders, manual EPG mapping, channel renaming and reordering
 - [x] 4.4 Performance test (JVM): 50k channels + 200k programmes import in ~5 s, search ~55 ms
 - [ ] Same measurement on a physical Android TV and Apple TV

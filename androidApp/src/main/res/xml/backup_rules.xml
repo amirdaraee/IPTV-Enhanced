@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. Only the user's own data (playlists, favorites, progress, settings);
+     the catalog database and artwork cache are large and re-sync from the provider. -->
+<full-backup-content>
+    <include domain="file" path="user-data.json" />
+</full-backup-content>

@@ -13,7 +13,7 @@ final class AppModel: ObservableObject {
     private var subscriptions: [Subscription] = []
 
     init() {
-        core = Tuner(context: PlatformContext())
+        core = Tuner(context: PlatformContext(backup: KeychainBackup()))
         // AVPlayer can't play raw MPEG-TS, so Xtream live channels use HLS on tvOS.
         core.setPlatformDefaults(preferHlsLive: true)
         subscriptions.append(core.watchSync { [weak self] states in

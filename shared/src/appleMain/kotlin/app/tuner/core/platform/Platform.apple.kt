@@ -15,7 +15,10 @@ import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.timeIntervalSince1970
 
-actual class PlatformContext
+/** [backup] is implemented in Swift (the Keychain on tvOS; iCloud could replace it later). */
+actual class PlatformContext(val backup: app.tuner.core.UserDataBackup?) {
+    constructor() : this(null)
+}
 
 // WAL (SQLiter's default) with synchronous=NORMAL: commits skip the fsync, which is safe in
 // WAL mode and makes batched sync writes much cheaper. Extra reader connections let the
@@ -54,6 +57,8 @@ private fun databaseDirectory(): String {
     }
     return dir
 }
+
+internal actual fun createBackup(context: PlatformContext): app.tuner.core.UserDataBackup? = context.backup
 
 internal actual val callbackDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Main
 

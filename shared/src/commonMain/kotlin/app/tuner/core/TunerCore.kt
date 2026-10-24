@@ -25,6 +25,7 @@ import app.tuner.core.model.SyncState
 import app.tuner.core.model.WatchProgress
 import app.tuner.core.platform.PlatformContext
 import app.tuner.core.platform.callbackDispatcher
+import app.tuner.core.platform.createBackup
 import app.tuner.core.platform.createDriver
 import app.tuner.core.platform.createHttpClient
 import app.tuner.core.platform.nowMillis
@@ -51,6 +52,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -103,11 +105,19 @@ class LockedException : Exception("This content is locked. Enter the parental PI
  */
 @OptIn(ExperimentalObjCName::class)
 @ObjCName("Tuner", exact = true)
-class TunerCore internal constructor(driver: SqlDriver, private val http: HttpClient) {
+class TunerCore internal constructor(
+    driver: SqlDriver,
+    private val http: HttpClient,
+    private val backup: UserDataBackup? = null,
+) {
 
-    constructor(context: PlatformContext) : this(createDriver(context), createHttpClient(context))
+    constructor(context: PlatformContext) : this(createDriver(context), createHttpClient(context), createBackup(context))
 
     private val db = TunerDatabase(driver)
+
+    /** Playlists restored from [backup] at start-up because the database was empty (e.g. purged by tvOS). */
+    val restoredSources: Int = restoreFromBackup()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val syncer = SourceSyncer(db, http) { settings.preferHlsLive }
     private val epgImporter = EpgImporter(db, http)
@@ -121,6 +131,10 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
 
     var settings: Settings = loadSettings()
         private set
+
+    init {
+        if (backup != null) keepBackupCurrent(backup)
+    }
 
     // ------------------------------------------------------------------ observation
 
@@ -158,6 +172,33 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
     }
 
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
+
+    // ------------------------------------------------------------------ user data backup
+
+    private fun restoreFromBackup(): Int {
+        val saved = backup?.load() ?: return 0
+        if (db.sourceQueries.selectAll().executeAsList().isNotEmpty()) return 0
+        return UserData.restore(db, saved)
+    }
+
+    /** Writes the snapshot at start-up and after changes settle; skips writes that change nothing. */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    private fun keepBackupCurrent(backup: UserDataBackup) {
+        var last: String? = null
+        scope.launch(Dispatchers.IO) {
+            counters.debounce(1500).collect {
+                val snapshot = runCatching { UserData.export(db) }.getOrNull() ?: return@collect
+                if (snapshot != last) {
+                    runCatching { backup.save(snapshot) }
+                    last = snapshot
+                }
+            }
+        }
+    }
+
+    /** The user's own data (playlists, favorites, progress, settings) as JSON, for backup or transfer. */
+    @Throws(Exception::class)
+    suspend fun exportUserData(): String = io { UserData.export(db) }
 
     // ------------------------------------------------------------------ settings
 

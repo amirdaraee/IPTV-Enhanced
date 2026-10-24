@@ -54,3 +54,9 @@ UPDATE source SET auto_epg_urls = ? WHERE id = ?;
 
 delete:
 DELETE FROM source WHERE id = ?;
+
+-- ---------- user data backup ----------
+
+restore:
+INSERT INTO source(name, type, url, username, password, epg_urls, user_agent, epg_offset_minutes, refresh_hours, enabled, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);

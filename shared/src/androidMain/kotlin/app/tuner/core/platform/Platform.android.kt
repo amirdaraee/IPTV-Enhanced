@@ -26,4 +26,20 @@ internal actual fun createDriver(context: PlatformContext): SqlDriver =
 
 internal actual fun createHttpClient(context: PlatformContext): HttpClient = HttpClient(OkHttp) { tunerDefaults() }
 
+/**
+ * The database itself is safe in app storage; this small file is what Android's backup to
+ * Google includes (see the app's backup rules), so a reinstall or a new TV gets it back.
+ */
+internal actual fun createBackup(context: PlatformContext): app.tuner.core.UserDataBackup? = FileBackup(java.io.File(context.context.filesDir, "user-data.json"))
+
+private class FileBackup(private val file: java.io.File) : app.tuner.core.UserDataBackup {
+    override fun save(snapshot: String) {
+        val tmp = java.io.File(file.parentFile, file.name + ".tmp")
+        tmp.writeText(snapshot)
+        if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+    }
+
+    override fun load(): String? = file.takeIf { it.exists() }?.readText()
+}
+
 internal actual val callbackDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Main

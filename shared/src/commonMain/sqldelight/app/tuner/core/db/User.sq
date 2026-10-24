@@ -63,3 +63,14 @@ INSERT OR REPLACE INTO setting(skey, value) VALUES (?, ?);
 
 removeSetting:
 DELETE FROM setting WHERE skey = ?;
+
+-- ---------- user data backup ----------
+
+allProgress:
+SELECT * FROM progress;
+
+allRecents:
+SELECT * FROM recent;
+
+allSettings:
+SELECT * FROM setting;

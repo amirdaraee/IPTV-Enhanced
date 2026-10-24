@@ -100,6 +100,53 @@ class CoreEndToEndTest {
     }
 
     @Test
+    fun userDataSurvivesLosingTheDatabase() = runBlocking {
+        val store = object : UserDataBackup {
+            @Volatile var saved: String? = null
+            override fun save(snapshot: String) { saved = snapshot }
+            override fun load() = saved
+        }
+        fun freshDriver() = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { TunerDatabase.Schema.create(it) }
+
+        val a = TunerCore(freshDriver(), HttpClient(engine()), store)
+        val id = a.addSource(SourceInput("Demo", SourceType.XTREAM, "demo.test:8080", "u", "p w"))
+        assertNull(a.refreshNow(id))
+        while (a.sourcesSyncing()) Thread.sleep(20)
+        val groups = a.liveGroups(false)
+        val news = a.channels(groups.first { it.name == "News" }, false).single()
+        a.setFavorite(ContentKind.LIVE, id, news.key, true)
+        a.setGroupHidden(groups.first { it.name == "Sports" }, true)
+        val film = a.movies(a.vodGroups(ContentKind.MOVIE, false).first { it.type == GroupType.CATEGORY }, 0, 10).single()
+        a.saveProgress(a.playMovie(film), 600_000, 5_400_000)
+        a.updateSettings(a.settings.copy(use24h = false))
+        // The backup is written once changes settle.
+        val deadline = System.currentTimeMillis() + 5_000
+        while (store.saved?.contains("\"use_24h\"") != true && System.currentTimeMillis() < deadline) Thread.sleep(50)
+        assertNotNull(store.saved)
+
+        // The database is gone (tvOS purged Caches, or a new install restored from Google).
+        val b = TunerCore(freshDriver(), HttpClient(engine()), store)
+        assertEquals(1, b.restoredSources)
+        val restored = b.sources().single()
+        assertEquals("Demo", restored.name)
+        assertEquals("p w", restored.password)
+        assertFalse(b.settings.use24h)
+        assertNull(b.refreshNow(restored.id))
+        val after = b.liveGroups(false)
+        assertEquals(listOf("News One"), b.channels(after.first { it.type == GroupType.FAVORITES }, false).map { it.name })
+        assertTrue(after.none { it.name == "Sports" }, "hidden group stays hidden")
+        val resume = b.continueWatching(10).single()
+        assertEquals("Big Film", resume.title)
+        assertEquals(600_000, resume.positionMs)
+        assertTrue(resume.key.startsWith("movie:${restored.id}:"), resume.key)
+
+        // A backup with playlists never overwrites a database that already has some.
+        assertEquals(0, TunerCore(freshDriver().also { d ->
+            TunerCore(d, HttpClient(engine())).addSource(SourceInput("Other", SourceType.M3U, "http://m3u/playlist.m3u"))
+        }, HttpClient(engine()), store).restoredSources)
+    }
+
+    @Test
     fun xtreamEndToEnd() = runBlocking {
         val core = core()
         val account = core.verifyXtream("demo.test:8080/player_api.php", "u", "p w")
