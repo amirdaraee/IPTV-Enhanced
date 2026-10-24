@@ -114,19 +114,63 @@ final class TunerUITests: XCTestCase {
         }
     }
 
+    func testSeriesDetail() {
+        app.launchArguments = ["-demoXtream", "http://localhost:8900"]
+        app.launch()
+        Thread.sleep(forTimeInterval: 6)
+        press(.up, wait: 1)
+        press(.right, 2, wait: 1.5)
+        shot("series-tab")
+        press(.down, wait: 1)
+        press(.right, wait: 1)
+        press(.select, wait: 4)
+        shot("series-detail")
+        press(.down, wait: 1)
+        press(.down, wait: 1)
+        shot("episode-focused")
+    }
+
+    func testSearch() {
+        app.launchArguments = ["-demoXtream", "http://localhost:8900"]
+        app.launch()
+        Thread.sleep(forTimeInterval: 6)
+        press(.up, wait: 1)
+        press(.right, 3, wait: 1.5)
+        press(.down, wait: 1.5)
+        shot("search-focused")
+        app.typeText("match")
+        Thread.sleep(forTimeInterval: 1)
+        shot("search-keyboard")
+        press(.down, 4, wait: 0.6)
+        Thread.sleep(forTimeInterval: 1.5)
+        shot("search-results")
+    }
+
     func testOnboardingForm() {
         app.launch()
         Thread.sleep(forTimeInterval: 3)
         shot("welcome")
         press(.select, wait: 2)
         shot("form")
-        press(.down, wait: 1)
-        press(.down, wait: 1)
-        shot("server-focused")
+        press(.down, wait: 1)     // name
+        press(.down, wait: 1)     // server
         press(.select, wait: 2)
         app.typeText("http://localhost:8900")
-        shot("keyboard")
+        shot("server-keyboard")
         press(.menu, wait: 1.5)
-        shot("after-keyboard")
+        press(.down, wait: 1)     // username
+        press(.select, wait: 2)
+        app.typeText("demo")
+        press(.menu, wait: 1.5)
+        press(.right, wait: 1)    // password
+        press(.select, wait: 2)
+        app.typeText("secret")
+        press(.menu, wait: 1.5)
+        shot("form-filled")
+        press(.down, 3, wait: 1)  // epg, user agent, buttons
+        press(.left, wait: 1)     // "Add playlist"
+        shot("add-focused")
+        press(.select, wait: 10)
+        shot("after-add")
     }
 }

@@ -37,8 +37,8 @@ struct SearchView: View {
                                     Button { play(hit.channel, lineup: [hit.channel]) } label: {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(hit.programme.title).lineLimit(1)
-                                            Text(Fmt.range(hit.programme.start, hit.programme.stop)).font(.caption).foregroundStyle(Palette.textDim)
-                                            Text(hit.channel.name).font(.caption).foregroundStyle(Palette.textDim)
+                                            Text(Fmt.range(hit.programme.start, hit.programme.stop)).font(.caption).foregroundStyle(.secondary)
+                                            Text(hit.channel.name).font(.caption).foregroundStyle(.secondary)
                                         }
                                         .frame(width: 400, alignment: .leading)
                                     }
