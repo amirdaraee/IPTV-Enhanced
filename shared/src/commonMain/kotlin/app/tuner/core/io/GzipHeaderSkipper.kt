@@ -1,43 +1,69 @@
 package app.tuner.core.io
 
-/** Parses (and skips) a gzip member header so a raw-deflate inflater can take over. */
+/**
+ * Incrementally parses (and skips) a gzip member header so a raw-deflate
+ * inflater can take over. The header is capped at [MAX_HEADER] bytes.
+ */
 internal class GzipHeaderSkipper {
-    private val buf = ArrayList<Byte>()
-    var done = false
-        private set
+    private enum class Step { FIXED, EXTRA_LEN, EXTRA, NAME, COMMENT, HCRC, DONE }
+
+    private var step = Step.FIXED
+    private var flags = 0
+    private var count = 0       // bytes consumed within the current step
+    private var extraLen = 0
+    private var total = 0
+    val done get() = step == Step.DONE
 
     /** Returns how many bytes of the input belong to the header. */
     fun consume(bytes: ByteArray, offset: Int, length: Int): Int {
-        val startSize = buf.size
-        for (i in offset until offset + length) {
-            buf.add(bytes[i])
-            val size = headerSize()
-            if (size != null) {
-                done = true
-                return size - startSize
+        var i = offset
+        val end = offset + length
+        while (i < end && step != Step.DONE) {
+            val b = bytes[i++].toInt() and 0xFF
+            if (++total > MAX_HEADER) error("gzip header too large")
+            when (step) {
+                Step.FIXED -> {
+                    if (count == 3) flags = b
+                    if (++count == 10) advance(Step.EXTRA_LEN)
+                }
+                Step.EXTRA_LEN -> {
+                    extraLen = extraLen or (b shl (8 * count))
+                    if (++count == 2) { if (extraLen == 0) advance(Step.NAME) else step = Step.EXTRA.also { count = 0 } }
+                }
+                Step.EXTRA -> if (++count == extraLen) advance(Step.NAME)
+                Step.NAME -> if (b == 0) advance(Step.COMMENT)
+                Step.COMMENT -> if (b == 0) advance(Step.HCRC)
+                Step.HCRC -> if (++count == 2) step = Step.DONE
+                Step.DONE -> Unit
             }
         }
-        return length
+        return i - offset
     }
 
-    private fun headerSize(): Int? {
-        if (buf.size < 10) return null
-        val flags = buf[3].toInt() and 0xFF
-        var pos = 10
-        if (flags and 0x04 != 0) { // FEXTRA
-            if (buf.size < pos + 2) return null
-            val xlen = (buf[pos].toInt() and 0xFF) or ((buf[pos + 1].toInt() and 0xFF) shl 8)
-            pos += 2 + xlen
-            if (buf.size < pos) return null
+    /** Moves to [next], skipping steps whose flag bit is not set. */
+    private fun advance(next: Step) {
+        count = 0
+        var s = next
+        while (true) {
+            val enabled = when (s) {
+                Step.EXTRA_LEN -> flags and 0x04 != 0
+                Step.NAME -> flags and 0x08 != 0
+                Step.COMMENT -> flags and 0x10 != 0
+                Step.HCRC -> flags and 0x02 != 0
+                else -> true
+            }
+            if (enabled) break
+            s = when (s) {
+                Step.EXTRA_LEN -> Step.NAME
+                Step.NAME -> Step.COMMENT
+                Step.COMMENT -> Step.HCRC
+                else -> Step.DONE
+            }
         }
-        if (flags and 0x08 != 0) pos = skipZeroTerminated(pos) ?: return null // FNAME
-        if (flags and 0x10 != 0) pos = skipZeroTerminated(pos) ?: return null // FCOMMENT
-        if (flags and 0x02 != 0) pos += 2 // FHCRC
-        return if (buf.size >= pos) pos else null
+        step = s
     }
 
-    private fun skipZeroTerminated(from: Int): Int? {
-        for (i in from until buf.size) if (buf[i] == 0.toByte()) return i + 1
-        return null
+    private companion object {
+        const val MAX_HEADER = 64 * 1024
     }
 }

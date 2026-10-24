@@ -12,7 +12,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.datetime.TimeZone
 import kotlin.io.encoding.Base64
+import kotlin.math.roundToLong
 
 data class XtreamCredentials(val baseUrl: String, val username: String, val password: String) {
     /** Normalised "scheme://host[:port]" without trailing slash or player_api.php. */
@@ -36,7 +38,35 @@ data class XtreamAccount(
     val isTrial: Boolean,
     val outputFormats: List<String>,
     val serverTimezone: String?,
-)
+    /** Server wall-clock time ("yyyy-MM-dd HH:mm:ss") and its epoch seconds, for deriving an offset. */
+    val serverTimeNow: String? = null,
+    val serverTimestampNow: Long? = null,
+) {
+    /**
+     * Time zone the panel uses for timeshift URLs: the declared zone if valid,
+     * else a fixed offset derived from the server clock, else UTC.
+     */
+    fun resolvedTimezone(): String {
+        serverTimezone?.let { tz -> if (runCatching { TimeZone.of(tz) }.isSuccess) return tz }
+        val wall = serverTimeNow?.let(::parseWallClockAsUtc)
+        val ts = serverTimestampNow
+        if (wall != null && ts != null) {
+            val minutes = ((wall - ts) / 60.0 / 15.0).roundToLong() * 15
+            if (minutes != 0L && kotlin.math.abs(minutes) <= 14 * 60) {
+                val sign = if (minutes < 0) "-" else "+"
+                val m = kotlin.math.abs(minutes)
+                return "UTC$sign${(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}"
+            }
+        }
+        return "UTC"
+    }
+
+    private fun parseWallClockAsUtc(s: String): Long? {
+        val digits = s.filter { it.isDigit() }
+        if (digits.length < 14) return null
+        return app.tuner.core.xmltv.parseXmltvTime(digits.take(14) + " +0000")?.div(1000)
+    }
+}
 
 data class XtreamCategory(val id: String, val name: String)
 
@@ -141,6 +171,8 @@ class XtreamClient(
             isTrial = user.bool("is_trial"),
             outputFormats = formats,
             serverTimezone = server?.str("timezone"),
+            serverTimeNow = server?.str("time_now"),
+            serverTimestampNow = server?.long("timestamp_now"),
         )
     }
 

@@ -50,7 +50,7 @@ class XmlTokenizer(private val handler: XmlHandler) {
                 c == '>' -> openTag()
                 c == '/' -> { selfClosing = true; state = S.IN_TAG }
                 c.isXmlSpace() -> state = S.IN_TAG
-                else -> name.append(c)
+                else -> name.appendCapped(c)
             }
             S.IN_TAG -> when {
                 c == '>' -> openTag()
@@ -62,7 +62,7 @@ class XmlTokenizer(private val handler: XmlHandler) {
                 c == '=' -> state = S.ATTR_EQ
                 c.isXmlSpace() -> Unit
                 c == '>' -> openTag()
-                else -> attrName.append(c)
+                else -> attrName.appendCapped(c)
             }
             S.ATTR_EQ -> if (c == '"' || c == '\'') {
                 quote = c
@@ -73,7 +73,7 @@ class XmlTokenizer(private val handler: XmlHandler) {
                 attrs[attrName.toString()] = decodeEntities(attrValue)
                 state = S.IN_TAG
             } else {
-                attrValue.append(c)
+                attrValue.appendCapped(c, MAX_TEXT)
             }
             S.END_NAME -> when {
                 c == '>' -> {
@@ -82,7 +82,7 @@ class XmlTokenizer(private val handler: XmlHandler) {
                     state = S.TEXT
                 }
                 c.isXmlSpace() -> Unit
-                else -> name.append(c)
+                else -> name.appendCapped(c)
             }
             S.BANG -> {
                 bang.append(c)
@@ -101,12 +101,12 @@ class XmlTokenizer(private val handler: XmlHandler) {
                 else -> 0
             }
             S.CDATA -> when {
-                c == ']' -> if (tail < 2) tail++ else text.append(']')
+                c == ']' -> if (tail < 2) tail++ else text.appendCapped(']', MAX_TEXT)
                 c == '>' && tail == 2 -> { tail = 0; state = S.TEXT }
                 else -> {
-                    repeat(tail) { text.append(']') }
+                    repeat(tail) { text.appendCapped(']', MAX_TEXT) }
                     tail = 0
-                    text.append(c)
+                    text.appendCapped(c, MAX_TEXT)
                 }
             }
             S.DOCTYPE -> when (c) {
@@ -131,10 +131,16 @@ class XmlTokenizer(private val handler: XmlHandler) {
         state = S.TEXT
     }
 
+    // Caps keep hostile or broken input from growing buffers without bound.
+    private fun StringBuilder.appendCapped(c: Char, max: Int = MAX_NAME) {
+        if (length < max) append(c)
+    }
+
     private fun Char.isXmlSpace() = this == ' ' || this == '\n' || this == '\r' || this == '\t'
 
     companion object {
         private const val MAX_TEXT = 32 * 1024
+        private const val MAX_NAME = 256
 
         fun decodeEntities(sb: CharSequence): String {
             if (sb.indexOf('&') < 0) return sb.toString()

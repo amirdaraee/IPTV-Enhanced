@@ -12,35 +12,61 @@ data class Source(
     val name: String,
     val type: SourceType,
     val url: String,
+    val username: String?,
+    val password: String?,
+    /** User-supplied EPG URLs. */
+    val epgUrls: List<String>,
+    /** EPG URLs discovered from the playlist header or Xtream. */
+    val autoEpgUrls: List<String>,
+    val userAgent: String?,
+    val epgOffsetMinutes: Int,
+    val refreshHours: Int,
+    val lastRefreshed: Long?,
+    val lastError: String?,
+    val enabled: Boolean,
+    val expiresAt: Long?,
+    val maxConnections: Int?,
+    val serverTimezone: String?,
+)
+
+data class SourceInput(
+    val name: String,
+    val type: SourceType,
+    val url: String,
     val username: String? = null,
     val password: String? = null,
-    val epgUrl: String? = null,
+    val epgUrls: List<String> = emptyList(),
     val userAgent: String? = null,
+    val epgOffsetMinutes: Int = 0,
     val refreshHours: Int = 24,
-    val lastRefreshed: Long? = null,
-    val lastError: String? = null,
     val enabled: Boolean = true,
 )
 
-data class Category(
-    val id: Long,
-    val sourceId: Long,
+enum class GroupType { FAVORITES, RECENTS, ALL, CATEGORY }
+
+data class Group(
+    /** Stable id usable for persistence: "fav", "recent", "all" or "c:<source>:<kind>:<key>". */
+    val id: String,
+    val type: GroupType,
     val kind: ContentKind,
-    val remoteId: String,
+    val sourceId: Long,
+    val key: String,
     val name: String,
+    val sourceName: String?,
     val hidden: Boolean,
-    val sortOrder: Int,
+    val locked: Boolean,
 )
 
 data class Channel(
     val id: Long,
     val sourceId: Long,
-    val categoryId: Long?,
-    val groupName: String,
+    val key: String,
+    val categoryKey: String,
     val name: String,
     val number: Int?,
     val logo: String?,
     val epgId: String?,
+    val epgKey: String?,
     val url: String,
     val remoteId: String?,
     val catchupMode: CatchupMode,
@@ -50,13 +76,16 @@ data class Channel(
     val referrer: String?,
     val favorite: Boolean,
     val hidden: Boolean,
-)
+    val locked: Boolean,
+) {
+    val hasCatchup: Boolean get() = catchupMode != CatchupMode.NONE && catchupDays > 0
+}
 
 data class Movie(
     val id: Long,
     val sourceId: Long,
-    val categoryId: Long?,
-    val groupName: String,
+    val key: String,
+    val categoryKey: String,
     val name: String,
     val poster: String?,
     val url: String,
@@ -70,12 +99,13 @@ data class Movie(
 data class Series(
     val id: Long,
     val sourceId: Long,
-    val categoryId: Long?,
-    val groupName: String,
+    val key: String,
+    val categoryKey: String,
     val name: String,
     val cover: String?,
     val remoteId: String,
     val plot: String?,
+    val genre: String?,
     val rating: Double?,
     val year: String?,
     val favorite: Boolean,
@@ -90,6 +120,7 @@ data class Episode(
     val image: String?,
     val durationSecs: Long?,
     val url: String,
+    val progress: WatchProgress?,
 )
 
 data class SeriesDetails(
@@ -111,6 +142,7 @@ data class MovieDetails(
     val durationSecs: Long?,
     val backdrop: String?,
     val trailer: String?,
+    val progress: WatchProgress?,
 )
 
 data class Programme(
@@ -122,28 +154,73 @@ data class Programme(
     val category: String?,
     val icon: String?,
     val episodeNum: String? = null,
-)
+) {
+    fun isLive(now: Long) = now in start until stop
+    fun progress(now: Long): Float =
+        if (stop <= start) 0f else ((now - start).toFloat() / (stop - start)).coerceIn(0f, 1f)
+}
+
+data class GuideRow(val channel: Channel, val programmes: List<Programme>)
+
+data class ProgrammeHit(val programme: Programme, val channel: Channel)
+
+data class SearchResults(
+    val channels: List<Channel>,
+    val movies: List<Movie>,
+    val series: List<Series>,
+    val programmes: List<ProgrammeHit>,
+) {
+    val isEmpty get() = channels.isEmpty() && movies.isEmpty() && series.isEmpty() && programmes.isEmpty()
+}
 
 data class WatchProgress(
-    val key: String,          // e.g. "movie:12", "episode:3:4512"
+    val key: String,          // "movie:<source>:<id>" or "episode:<source>:<id>"
+    val sourceId: Long,
     val kind: ContentKind,
     val title: String,
+    val subtitle: String?,
     val image: String?,
     val url: String,
     val positionMs: Long,
     val durationMs: Long,
     val updatedAt: Long,
-    val parentId: Long?,      // series id for episodes
-)
+    val parentKey: String?,   // series key for episodes
+) {
+    val fraction: Float get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+    val watched: Boolean get() = durationMs > 0 && positionMs >= durationMs * 92 / 100
+}
 
 /** Stream request with headers, ready for a platform player. */
 data class PlaybackRequest(
     val url: String,
     val title: String,
+    val subtitle: String?,
+    val image: String?,
     val userAgent: String?,
     val referrer: String?,
-    val headers: Map<String, String> = emptyMap(),
     val isLive: Boolean,
-    val startPositionMs: Long = 0,
-    val progressKey: String? = null,
+    val startPositionMs: Long,
+    /** When set, the player should report progress with [app.tuner.core.TunerCore.saveProgress]. */
+    val progressKey: String?,
+    val progressParentKey: String?,
+    val sourceId: Long,
+    val kind: ContentKind,
+    val channelId: Long?,
+)
+
+data class SyncState(
+    val sourceId: Long,
+    val running: Boolean,
+    val phase: String,
+    val count: Int,
+    val error: String?,
+)
+
+data class Settings(
+    val guidePastDays: Int = 2,
+    val guideFutureDays: Int = 7,
+    val use24h: Boolean = true,
+    val overlayTimeoutSec: Int = 4,
+    val autoplayLastChannel: Boolean = false,
+    val preferHlsLive: Boolean = false,
 )

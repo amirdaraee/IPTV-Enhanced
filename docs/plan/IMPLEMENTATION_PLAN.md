@@ -19,13 +19,13 @@ Toolchain: Kotlin 2.4.21, AGP 9.4.1, Gradle 9.8.2, JDK 17, compileSdk 37, Xcode 
 - [x] 1.4 `XmlTokenizer` + `XmltvParser` push parser; `parseXmltvTime`
 - [x] 1.5 `XtreamClient` (auth, categories, streams, series, series/vod info, short EPG, URL builders) with tolerant JSON
 - [x] 1.6 `CatchupUrlBuilder` (default/append/shift/flussonic/xtream)
-- [ ] 1.7 SQLDelight schema and queries (tables from SPEC §4) plus platform drivers
-- [ ] 1.8 `HttpDownloader`: streams a URL through `TextPipeline` with headers and progress
-- [ ] 1.9 `SourceSyncer`: M3U and Xtream sync with the merge rule and batched transactions
-- [ ] 1.10 `EpgImporter`: retention window, offset, id and name matching, batched insert
-- [ ] 1.11 Repositories: channels, guide queries (programmes for N channels in a time window), VOD, progress, recents, search, settings, PIN
-- [ ] 1.12 `TunerCore` facade: Swift-friendly suspend API plus callback observers; main-thread delivery
-- [ ] 1.13 Tests: Xtream MockEngine, sync merge, EPG import, catch-up templates, gzip
+- [x] 1.7 SQLDelight schema and queries (tables from SPEC §4) plus platform drivers
+- [x] 1.8 `HttpDownloader`: streams a URL through `TextPipeline` with headers and progress
+- [x] 1.9 `SourceSyncer`: M3U and Xtream sync with the merge rule and batched transactions
+- [x] 1.10 `EpgImporter`: retention window, offset, id and name matching, batched insert
+- [x] 1.11 Repositories: channels, guide queries (programmes for N channels in a time window), VOD, progress, recents, search, settings, PIN
+- [x] 1.12 `TunerCore` facade: Swift-friendly suspend API plus callback observers; main-thread delivery
+- [x] 1.13 Tests: Xtream MockEngine, sync merge, EPG import, catch-up templates, gzip
 
 ## M2: Android TV app
 - [ ] 2.1 App shell: theme, `TunerApp` (core singleton), navigation graph, exit confirmation

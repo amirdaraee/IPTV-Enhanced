@@ -16,7 +16,7 @@ class LineSplitter(private val onLine: (String) -> Unit) {
                     lastWasCr = false
                     continue
                 }
-                partial.appendRange(chars, start, i)
+                appendCapped(chars, start, i)
                 onLine(partial.toString())
                 partial.clear()
                 start = i + 1
@@ -25,7 +25,17 @@ class LineSplitter(private val onLine: (String) -> Unit) {
                 lastWasCr = false
             }
         }
-        if (start < length) partial.appendRange(chars, start, length)
+        if (start < length) appendCapped(chars, start, length)
+    }
+
+    /** Over-long lines are truncated; no legitimate playlist line comes close. */
+    private fun appendCapped(chars: CharArray, from: Int, to: Int) {
+        val room = MAX_LINE - partial.length
+        if (room > 0) partial.appendRange(chars, from, minOf(to, from + room))
+    }
+
+    private companion object {
+        const val MAX_LINE = 256 * 1024
     }
 
     fun finish() {

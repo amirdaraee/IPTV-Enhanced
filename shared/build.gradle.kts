@@ -47,6 +47,7 @@ kotlin {
             implementation(libs.ktor.mock)
         }
         androidMain.dependencies {
+            implementation(libs.coroutines.android)
             implementation(libs.ktor.okhttp)
             implementation(libs.sqldelight.android)
         }

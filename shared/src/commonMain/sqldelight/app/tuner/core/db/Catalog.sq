@@ -1,0 +1,336 @@
+-- Provider data. Rows are replaced wholesale on every successful sync; user
+-- choices live in the *_pref tables keyed by natural key (ckey) so they survive.
+
+CREATE TABLE category (
+  source_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  ckey TEXT NOT NULL,
+  name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (source_id, kind, ckey)
+);
+
+CREATE TABLE channel (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL,
+  ckey TEXT NOT NULL,
+  category_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  name_norm TEXT NOT NULL,
+  number INTEGER,
+  logo TEXT,
+  epg_id TEXT,
+  epg_key TEXT,
+  url TEXT NOT NULL,
+  remote_id TEXT,
+  catchup_mode TEXT NOT NULL,
+  catchup_days INTEGER NOT NULL,
+  catchup_source TEXT,
+  user_agent TEXT,
+  referrer TEXT,
+  position INTEGER NOT NULL
+);
+CREATE INDEX channel_source ON channel(source_id, category_key, position);
+CREATE INDEX channel_key ON channel(source_id, ckey);
+CREATE INDEX channel_name ON channel(name_norm);
+
+CREATE TABLE movie (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL,
+  ckey TEXT NOT NULL,
+  category_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  name_norm TEXT NOT NULL,
+  poster TEXT,
+  url TEXT NOT NULL,
+  remote_id TEXT,
+  rating REAL,
+  year TEXT,
+  added_at INTEGER,
+  position INTEGER NOT NULL
+);
+CREATE INDEX movie_source ON movie(source_id, category_key, position);
+CREATE INDEX movie_name ON movie(name_norm);
+
+CREATE TABLE series (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL,
+  ckey TEXT NOT NULL,
+  category_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  name_norm TEXT NOT NULL,
+  cover TEXT,
+  remote_id TEXT NOT NULL,
+  plot TEXT,
+  genre TEXT,
+  rating REAL,
+  year TEXT,
+  position INTEGER NOT NULL
+);
+CREATE INDEX series_source ON series(source_id, category_key, position);
+CREATE INDEX series_name ON series(name_norm);
+
+CREATE TABLE item_pref (
+  source_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  ckey TEXT NOT NULL,
+  favorite INTEGER NOT NULL DEFAULT 0,
+  favorite_at INTEGER NOT NULL DEFAULT 0,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  locked INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (source_id, kind, ckey)
+);
+
+CREATE TABLE group_pref (
+  source_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  ckey TEXT NOT NULL,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  locked INTEGER NOT NULL DEFAULT 0,
+  custom_position INTEGER,
+  PRIMARY KEY (source_id, kind, ckey)
+);
+
+-- ---------- sync ----------
+
+deleteCategories:
+DELETE FROM category WHERE source_id = ? AND kind = ?;
+
+insertCategory:
+INSERT OR REPLACE INTO category(source_id, kind, ckey, name, position) VALUES (?, ?, ?, ?, ?);
+
+deleteChannels:
+DELETE FROM channel WHERE source_id = ?;
+
+promoteChannels:
+UPDATE channel SET source_id = :sourceId WHERE source_id = -:sourceId;
+
+insertChannel:
+INSERT INTO channel(source_id, ckey, category_key, name, name_norm, number, logo, epg_id, url, remote_id, catchup_mode, catchup_days, catchup_source, user_agent, referrer, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteMovies:
+DELETE FROM movie WHERE source_id = ?;
+
+promoteMovies:
+UPDATE movie SET source_id = :sourceId WHERE source_id = -:sourceId;
+
+insertMovie:
+INSERT INTO movie(source_id, ckey, category_key, name, name_norm, poster, url, remote_id, rating, year, added_at, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteSeries:
+DELETE FROM series WHERE source_id = ?;
+
+promoteSeries:
+UPDATE series SET source_id = :sourceId WHERE source_id = -:sourceId;
+
+deleteAllCategories:
+DELETE FROM category WHERE source_id = ?;
+
+promoteCategories:
+UPDATE category SET source_id = :sourceId WHERE source_id = -:sourceId;
+
+insertSeries:
+INSERT INTO series(source_id, ckey, category_key, name, name_norm, cover, remote_id, plot, genre, rating, year, position)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteSourcePrefs {
+  DELETE FROM item_pref WHERE source_id = :sourceId;
+  DELETE FROM group_pref WHERE source_id = :sourceId;
+  DELETE FROM category WHERE source_id = :sourceId;
+  DELETE FROM channel WHERE source_id = :sourceId;
+  DELETE FROM movie WHERE source_id = :sourceId;
+  DELETE FROM series WHERE source_id = :sourceId;
+}
+
+channelEpgRefs:
+SELECT id, source_id, epg_id, name FROM channel WHERE source_id = ?;
+
+setChannelEpgKey:
+UPDATE channel SET epg_key = ? WHERE id = ?;
+
+-- ---------- groups ----------
+
+groups:
+SELECT c.source_id, c.kind, c.ckey, c.name, c.position,
+       IFNULL(g.hidden, 0) AS hidden, IFNULL(g.locked, 0) AS locked, g.custom_position,
+       s.name AS source_name
+FROM category c
+JOIN source s ON s.id = c.source_id AND s.enabled = 1
+LEFT JOIN group_pref g ON g.source_id = c.source_id AND g.kind = c.kind AND g.ckey = c.ckey
+WHERE c.kind = ?
+ORDER BY IFNULL(g.custom_position, 1000000 + s.position * 100000 + c.position);
+
+upsertGroupPrefInsert:
+INSERT OR IGNORE INTO group_pref(source_id, kind, ckey) VALUES (?, ?, ?);
+
+setGroupHidden:
+UPDATE group_pref SET hidden = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+setGroupLocked:
+UPDATE group_pref SET locked = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+setGroupPosition:
+UPDATE group_pref SET custom_position = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+-- ---------- channels ----------
+
+channelsInGroup:
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+FROM channel ch
+LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+WHERE ch.source_id = ? AND ch.category_key = ? AND (:includeHidden = 1 OR IFNULL(p.hidden, 0) = 0)
+ORDER BY ch.position;
+
+allChannels:
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+FROM channel ch
+JOIN source s ON s.id = ch.source_id AND s.enabled = 1
+LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
+WHERE IFNULL(p.hidden, 0) = 0 AND IFNULL(g.hidden, 0) = 0
+ORDER BY s.position, ch.position
+LIMIT :limit;
+
+favoriteChannels:
+SELECT ch.*, p.favorite, p.hidden, p.locked
+FROM channel ch
+JOIN source s ON s.id = ch.source_id AND s.enabled = 1
+JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+WHERE p.favorite = 1
+ORDER BY p.favorite_at;
+
+recentChannels:
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+FROM recent r
+JOIN channel ch ON ch.source_id = r.source_id AND ch.ckey = r.ckey
+JOIN source s ON s.id = ch.source_id AND s.enabled = 1
+LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+GROUP BY r.source_id, r.ckey
+ORDER BY MAX(r.watched_at) DESC
+LIMIT 30;
+
+channelById:
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+FROM channel ch
+LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+WHERE ch.id = ?;
+
+channelByKey:
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+FROM channel ch
+LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+WHERE ch.source_id = ? AND ch.ckey = ?;
+
+searchChannels:
+SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, IFNULL(p.locked, 0) AS locked
+FROM channel ch
+JOIN source s ON s.id = ch.source_id AND s.enabled = 1
+LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+WHERE ch.name_norm LIKE ('%' || :query || '%') AND IFNULL(p.hidden, 0) = 0
+ORDER BY CASE WHEN ch.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(ch.name_norm)
+LIMIT :limit;
+
+channelCount:
+SELECT COUNT(*) FROM channel WHERE source_id = ?;
+
+-- ---------- prefs ----------
+
+ensureItemPref:
+INSERT OR IGNORE INTO item_pref(source_id, kind, ckey) VALUES (?, ?, ?);
+
+setFavorite:
+UPDATE item_pref SET favorite = ?, favorite_at = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+setItemHidden:
+UPDATE item_pref SET hidden = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+setItemLocked:
+UPDATE item_pref SET locked = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+hiddenChannels:
+SELECT ch.*, p.favorite, p.hidden, p.locked
+FROM channel ch
+JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
+WHERE p.hidden = 1
+ORDER BY ch.name;
+
+-- ---------- vod ----------
+
+moviesInGroup:
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+FROM movie m
+LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+WHERE m.source_id = ? AND m.category_key = ?
+ORDER BY m.position
+LIMIT :limit OFFSET :offset;
+
+recentMovies:
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+FROM movie m
+JOIN source s ON s.id = m.source_id AND s.enabled = 1
+LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+WHERE m.added_at IS NOT NULL
+ORDER BY m.added_at DESC
+LIMIT :limit;
+
+favoriteMovies:
+SELECT m.*, p.favorite
+FROM movie m
+JOIN source s ON s.id = m.source_id AND s.enabled = 1
+JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+WHERE p.favorite = 1
+ORDER BY p.favorite_at DESC;
+
+movieById:
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+FROM movie m
+LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+WHERE m.id = ?;
+
+searchMovies:
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite
+FROM movie m
+JOIN source s ON s.id = m.source_id AND s.enabled = 1
+LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+WHERE m.name_norm LIKE ('%' || :query || '%')
+ORDER BY CASE WHEN m.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(m.name_norm)
+LIMIT :limit;
+
+seriesInGroup:
+SELECT se.*, IFNULL(p.favorite, 0) AS favorite
+FROM series se
+LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+WHERE se.source_id = ? AND se.category_key = ?
+ORDER BY se.position
+LIMIT :limit OFFSET :offset;
+
+favoriteSeries:
+SELECT se.*, p.favorite
+FROM series se
+JOIN source s ON s.id = se.source_id AND s.enabled = 1
+JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+WHERE p.favorite = 1
+ORDER BY p.favorite_at DESC;
+
+seriesById:
+SELECT se.*, IFNULL(p.favorite, 0) AS favorite
+FROM series se
+LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+WHERE se.id = ?;
+
+searchSeries:
+SELECT se.*, IFNULL(p.favorite, 0) AS favorite
+FROM series se
+JOIN source s ON s.id = se.source_id AND s.enabled = 1
+LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+WHERE se.name_norm LIKE ('%' || :query || '%')
+ORDER BY CASE WHEN se.name_norm LIKE (:query || '%') THEN 0 ELSE 1 END, length(se.name_norm)
+LIMIT :limit;
+
+countMovies:
+SELECT COUNT(*) FROM movie WHERE source_id = ?;
+
+countSeries:
+SELECT COUNT(*) FROM series WHERE source_id = ?;

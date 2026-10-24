@@ -1,0 +1,72 @@
+CREATE TABLE programme (
+  source_id INTEGER NOT NULL,
+  epg_key TEXT NOT NULL,
+  start INTEGER NOT NULL,
+  stop INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  icon TEXT,
+  episode TEXT
+);
+CREATE INDEX programme_key_start ON programme(epg_key, start);
+CREATE INDEX programme_source ON programme(source_id);
+
+CREATE TABLE epg_channel (
+  source_id INTEGER NOT NULL,
+  epg_key TEXT NOT NULL,
+  name_norm TEXT NOT NULL
+);
+CREATE INDEX epg_channel_key ON epg_channel(epg_key);
+
+deleteProgrammes:
+DELETE FROM programme WHERE source_id = ?;
+
+deleteEpgChannels:
+DELETE FROM epg_channel WHERE source_id = ?;
+
+promoteProgrammes:
+UPDATE programme SET source_id = :sourceId WHERE source_id = -:sourceId;
+
+promoteEpgChannels:
+UPDATE epg_channel SET source_id = :sourceId WHERE source_id = -:sourceId;
+
+insertProgramme:
+INSERT INTO programme(source_id, epg_key, start, stop, title, description, category, icon, episode)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertEpgChannel:
+INSERT INTO epg_channel(source_id, epg_key, name_norm) VALUES (?, ?, ?);
+
+allEpgChannels:
+SELECT DISTINCT epg_key, name_norm FROM epg_channel;
+
+distinctProgrammeKeys:
+SELECT DISTINCT epg_key FROM programme;
+
+programmesInWindow:
+SELECT * FROM programme
+WHERE epg_key IN ? AND stop > ? AND start < ?
+ORDER BY epg_key, start;
+
+currentProgramme:
+SELECT * FROM programme WHERE epg_key = ? AND start <= :now AND stop > :now ORDER BY start DESC LIMIT 1;
+
+nextProgrammes:
+SELECT * FROM programme WHERE epg_key = ? AND stop > :now ORDER BY start LIMIT :limit;
+
+searchProgrammes:
+SELECT p.*, ch.id AS channel_id, ch.name AS channel_name, ch.logo AS channel_logo
+FROM programme p
+JOIN channel ch ON ch.epg_key = p.epg_key
+JOIN source s ON s.id = ch.source_id AND s.enabled = 1
+WHERE p.title LIKE ('%' || :query || '%') AND p.stop > :from AND p.start < :to
+GROUP BY p.epg_key, p.start
+ORDER BY p.start
+LIMIT :limit;
+
+pruneProgrammes:
+DELETE FROM programme WHERE stop < ?;
+
+programmeCount:
+SELECT COUNT(*) FROM programme WHERE source_id = ?;

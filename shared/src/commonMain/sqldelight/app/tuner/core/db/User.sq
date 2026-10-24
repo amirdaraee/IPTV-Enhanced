@@ -1,0 +1,65 @@
+CREATE TABLE progress (
+  pkey TEXT NOT NULL PRIMARY KEY,
+  source_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  image TEXT,
+  url TEXT NOT NULL,
+  position_ms INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  parent_key TEXT
+);
+
+CREATE TABLE recent (
+  source_id INTEGER NOT NULL,
+  ckey TEXT NOT NULL,
+  watched_at INTEGER NOT NULL,
+  PRIMARY KEY (source_id, ckey)
+);
+
+CREATE TABLE setting (
+  skey TEXT NOT NULL PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+saveProgress:
+INSERT OR REPLACE INTO progress(pkey, source_id, kind, title, subtitle, image, url, position_ms, duration_ms, updated_at, parent_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+progressByKey:
+SELECT * FROM progress WHERE pkey = ?;
+
+progressByParent:
+SELECT * FROM progress WHERE parent_key = ?;
+
+continueWatching:
+SELECT p.* FROM progress p
+JOIN source s ON s.id = p.source_id AND s.enabled = 1
+WHERE p.position_ms > 30000 AND (p.duration_ms = 0 OR p.position_ms < p.duration_ms * 92 / 100)
+ORDER BY p.updated_at DESC
+LIMIT :limit;
+
+deleteProgress:
+DELETE FROM progress WHERE pkey = ?;
+
+deleteSourceUserData {
+  DELETE FROM progress WHERE source_id = :sourceId;
+  DELETE FROM recent WHERE source_id = :sourceId;
+}
+
+touchRecent:
+INSERT OR REPLACE INTO recent(source_id, ckey, watched_at) VALUES (?, ?, ?);
+
+trimRecent:
+DELETE FROM recent WHERE watched_at < (SELECT watched_at FROM recent ORDER BY watched_at DESC LIMIT 1 OFFSET 49);
+
+getSetting:
+SELECT value FROM setting WHERE skey = ?;
+
+putSetting:
+INSERT OR REPLACE INTO setting(skey, value) VALUES (?, ?);
+
+removeSetting:
+DELETE FROM setting WHERE skey = ?;
