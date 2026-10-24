@@ -32,6 +32,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -48,6 +50,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import app.tuner.core.model.SyncState
+import app.tuner.tv.R
 import app.tuner.tv.core
 import app.tuner.tv.playerController
 import app.tuner.tv.ui.components.ConfirmDialog
@@ -130,10 +133,15 @@ fun HomeScreen(onExit: () -> Unit) {
                 .padding(vertical = 28.dp, horizontal = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                if (railFocused) "Tuner" else "T", style = MaterialTheme.typography.titleLarge, color = Palette.Accent,
-                modifier = Modifier.padding(start = 14.dp, bottom = 20.dp),
-            )
+            Row(Modifier.padding(start = 6.dp, bottom = 20.dp).height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+                Image(painterResource(R.mipmap.ic_launcher), contentDescription = null, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)))
+                if (railFocused) {
+                    Text(
+                        "IPTV Enhanced", style = MaterialTheme.typography.titleMedium, color = Palette.Accent, maxLines = 1,
+                        modifier = Modifier.padding(start = 10.dp),
+                    )
+                }
+            }
             Tab.entries.forEach { t ->
                 FocusSurface(
                     onClick = { tab = t; runCatching { contentFocus.requestFocus() } },
@@ -167,6 +175,6 @@ fun HomeScreen(onExit: () -> Unit) {
     }
 
     if (confirmExit) {
-        ConfirmDialog("Exit Tuner?", if (playerController.current != null) "Playback will stop." else "", "Exit", onConfirm = onExit, onDismiss = { confirmExit = false })
+        ConfirmDialog("Exit IPTV Enhanced?", if (playerController.current != null) "Playback will stop." else "", "Exit", onConfirm = onExit, onDismiss = { confirmExit = false })
     }
 }

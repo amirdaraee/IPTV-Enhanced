@@ -150,7 +150,7 @@ fun SourceEditScreen(sourceId: Long?) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 96.dp, vertical = 40.dp)) {
             Text(if (sourceId == null) "Add a playlist" else "Edit playlist", style = MaterialTheme.typography.displaySmall)
             Spacer(Modifier.height(6.dp))
-            Dim("Tuner plays content from your own provider. It doesn't include any channels.")
+            Dim("IPTV Enhanced plays content from your own provider. It doesn't include any channels.")
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 listOf(SourceType.XTREAM to "Xtream Codes login", SourceType.M3U to "M3U playlist URL").forEachIndexed { i, (t, label) ->

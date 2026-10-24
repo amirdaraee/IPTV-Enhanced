@@ -66,7 +66,7 @@ struct WelcomeView: View {
             LinearGradient(colors: [Palette.background, Palette.surface, Palette.accentDim.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
             VStack(alignment: .leading, spacing: 20) {
-                Text("Tuner").font(.system(size: 110, weight: .bold)).foregroundStyle(Palette.accent)
+                Text("IPTV Enhanced").font(.system(size: 96, weight: .bold)).foregroundStyle(Palette.accent)
                 Text("A free, open-source TV guide and player for your IPTV subscription.").font(.title2.weight(.semibold))
                 Text("Works with M3U playlists, XMLTV guides and Xtream Codes accounts. Your data stays on this device.")
                     .foregroundStyle(Palette.textDim)

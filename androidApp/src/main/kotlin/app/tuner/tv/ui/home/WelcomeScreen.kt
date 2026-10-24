@@ -37,7 +37,7 @@ fun WelcomeScreen() {
             .padding(96.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Tuner", style = MaterialTheme.typography.displaySmall.copy(fontSize = MaterialTheme.typography.displaySmall.fontSize * 1.6f), color = Palette.Accent)
+        Text("IPTV Enhanced", style = MaterialTheme.typography.displaySmall.copy(fontSize = MaterialTheme.typography.displaySmall.fontSize * 1.6f), color = Palette.Accent)
         Spacer(Modifier.height(8.dp))
         Text("A free, open-source TV guide and player for your IPTV subscription.", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))

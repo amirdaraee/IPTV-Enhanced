@@ -150,7 +150,7 @@ fun SettingsScreen(focusRequester: FocusRequester) {
         }
         item { Spacer(Modifier.height(16.dp)); SectionTitle("About") }
         item {
-            SettingRow("Tuner ${BuildConfig.VERSION_NAME}", "Free and open-source (GPL-3.0). Tuner provides no content.") {}
+            SettingRow("IPTV Enhanced ${BuildConfig.VERSION_NAME}", "Free and open-source (GPL-3.0). IPTV Enhanced provides no content.") {}
         }
     }
 

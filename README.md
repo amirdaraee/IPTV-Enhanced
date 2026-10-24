@@ -1,10 +1,12 @@
-# Tuner
+# IPTV Enhanced
+
+<img src="docs/brand/banner.png" alt="IPTV Enhanced" width="480">
 
 **A free, open-source IPTV player for Android TV and Apple TV.**
 
-Tuner is a TV guide and player for the playlists you already have: M3U/M3U8 playlists with XMLTV guides, and Xtream Codes accounts. It ships no content, has no accounts, and collects no telemetry. Everything stays on the device.
+IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M3U8 playlists with XMLTV guides, and Xtream Codes accounts. It ships no content, has no accounts, and collects no telemetry. Everything stays on the device.
 
-> Tuner is a player only. You are responsible for the content you load into it.
+> IPTV Enhanced is a player only. You are responsible for the content you load into it.
 
 ## Features (v0.1)
 

@@ -31,7 +31,7 @@ struct SourceEditView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     Text(sourceId == nil ? "Add a playlist" : "Edit playlist").font(.largeTitle.weight(.bold))
-                    Text("Tuner plays content from your own provider. It doesn't include any channels.")
+                    Text("IPTV Enhanced plays content from your own provider. It doesn't include any channels.")
                         .foregroundStyle(Palette.textDim)
                     Picker("Type", selection: $type) {
                         Text("Xtream Codes login").tag(SourceType.xtream)

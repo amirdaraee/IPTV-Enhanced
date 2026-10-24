@@ -1,4 +1,4 @@
-// Renders Tuner's icon artwork with CoreGraphics.
+// Renders IPTV Enhanced's icon artwork with CoreGraphics.
 // usage: swift render.swift <kind: back|front|full|banner|square> <width> <height> <out.png>
 import AppKit
 import CoreGraphics
@@ -23,37 +23,82 @@ func background() {
     ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: H), end: CGPoint(x: W, y: 0), options: [])
 }
 
-/// A rounded "screen" with three signal bars: the Tuner mark.
-func mark(center: CGPoint, size: CGFloat) {
-    let rect = CGRect(x: center.x - size / 2, y: center.y - size * 0.36, width: size, height: size * 0.62)
-    ctx.setStrokeColor(accent)
-    ctx.setLineWidth(size * 0.07)
-    ctx.addPath(CGPath(roundedRect: rect, cornerWidth: size * 0.1, cornerHeight: size * 0.1, transform: nil))
-    ctx.strokePath()
-    ctx.setFillColor(accent)
-    let barW = size * 0.09
-    for i in 0..<3 {
-        let bh = size * (0.14 + CGFloat(i) * 0.1)
-        let x = rect.minX + size * 0.26 + CGFloat(i) * size * 0.17
-        ctx.addPath(CGPath(roundedRect: CGRect(x: x, y: rect.minY + size * 0.12, width: barW, height: bh),
-                           cornerWidth: barW / 2, cornerHeight: barW / 2, transform: nil))
-    }
+/// Four-pointed sparkle: the "enhanced" accent.
+func sparkle(center c: CGPoint, radius r: CGFloat, color: CGColor) {
+    let path = CGMutablePath()
+    let waist = r * 0.22
+    path.move(to: CGPoint(x: c.x, y: c.y + r))
+    path.addQuadCurve(to: CGPoint(x: c.x + r, y: c.y), control: CGPoint(x: c.x + waist, y: c.y + waist))
+    path.addQuadCurve(to: CGPoint(x: c.x, y: c.y - r), control: CGPoint(x: c.x + waist, y: c.y - waist))
+    path.addQuadCurve(to: CGPoint(x: c.x - r, y: c.y), control: CGPoint(x: c.x - waist, y: c.y - waist))
+    path.addQuadCurve(to: CGPoint(x: c.x, y: c.y + r), control: CGPoint(x: c.x - waist, y: c.y + waist))
+    ctx.setFillColor(color)
+    ctx.addPath(path)
     ctx.fillPath()
-    // stand
-    ctx.fill(CGRect(x: center.x - size * 0.18, y: rect.minY - size * 0.12, width: size * 0.36, height: size * 0.05))
 }
 
-func text(_ s: String, size: CGFloat, at p: CGPoint) {
+/// A rounded screen with a play button and a sparkle on its corner: the IPTV Enhanced mark.
+func mark(center: CGPoint, size: CGFloat) {
+    let rect = CGRect(x: center.x - size / 2, y: center.y - size * 0.30, width: size, height: size * 0.64)
+    let corner = size * 0.12
+    // Screen: tinted glass with an accent frame.
+    ctx.saveGState()
+    ctx.addPath(CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil))
+    ctx.clip()
+    let glass = CGGradient(colorsSpace: cs, colors: [
+        CGColor(red: 0.37, green: 0.92, blue: 0.83, alpha: 0.10),
+        CGColor(red: 0.37, green: 0.92, blue: 0.83, alpha: 0.28),
+    ] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(glass, start: CGPoint(x: rect.minX, y: rect.minY), end: CGPoint(x: rect.maxX, y: rect.maxY), options: [])
+    ctx.restoreGState()
+    ctx.setStrokeColor(accent)
+    ctx.setLineWidth(size * 0.06)
+    ctx.addPath(CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil))
+    ctx.strokePath()
+    // Play button, optically centred (nudged right).
+    let t = size * 0.30
+    let cx = rect.midX + t * 0.08, cy = rect.midY
+    let play = CGMutablePath()
+    play.move(to: CGPoint(x: cx - t * 0.40, y: cy + t * 0.48))
+    play.addLine(to: CGPoint(x: cx + t * 0.52, y: cy))
+    play.addLine(to: CGPoint(x: cx - t * 0.40, y: cy - t * 0.48))
+    play.closeSubpath()
+    ctx.saveGState()
+    ctx.addPath(CGPath(roundedRect: play.boundingBox, cornerWidth: 0, cornerHeight: 0, transform: nil))
+    ctx.addPath(play)
+    ctx.setLineJoin(.round)
+    ctx.setLineWidth(size * 0.05)
+    ctx.setStrokeColor(accent)
+    ctx.setFillColor(accent)
+    ctx.beginPath()
+    ctx.addPath(play)
+    ctx.drawPath(using: .fillStroke)
+    ctx.restoreGState()
+    // Stand.
+    ctx.setFillColor(accent)
+    ctx.addPath(CGPath(roundedRect: CGRect(x: center.x - size * 0.17, y: rect.minY - size * 0.13, width: size * 0.34, height: size * 0.05),
+                       cornerWidth: size * 0.025, cornerHeight: size * 0.025, transform: nil))
+    ctx.fillPath()
+    // Sparkles on the top-right corner, with a dark halo so they read over the frame.
+    let gold = CGColor(red: 1.0, green: 0.84, blue: 0.45, alpha: 1)
+    let halo = CGColor(red: 0.04, green: 0.07, blue: 0.12, alpha: 1)
+    let big = CGPoint(x: rect.maxX - size * 0.02, y: rect.maxY + size * 0.02)
+    sparkle(center: big, radius: size * 0.21, color: halo)
+    sparkle(center: big, radius: size * 0.16, color: gold)
+    sparkle(center: CGPoint(x: rect.maxX + size * 0.14, y: rect.maxY - size * 0.15), radius: size * 0.065, color: gold)
+}
+
+func text(_ s: String, size: CGFloat, at p: CGPoint, weight: NSFont.Weight = .bold, color: CGColor = accent, leading: Bool = false) {
     let ns = NSGraphicsContext(cgContext: ctx, flipped: false)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = ns
     let attrs: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: size, weight: .bold),
-        .foregroundColor: NSColor(cgColor: accent)!,
+        .font: NSFont.systemFont(ofSize: size, weight: weight),
+        .foregroundColor: NSColor(cgColor: color)!,
     ]
     let str = NSAttributedString(string: s, attributes: attrs)
     let b = str.size()
-    str.draw(at: CGPoint(x: p.x - b.width / 2, y: p.y - b.height / 2))
+    str.draw(at: CGPoint(x: leading ? p.x : p.x - b.width / 2, y: p.y - b.height / 2))
     NSGraphicsContext.restoreGraphicsState()
 }
 
@@ -67,8 +112,10 @@ case "full", "square":
     mark(center: CGPoint(x: W / 2, y: H / 2), size: min(W, H) * 0.62)
 case "banner":
     background()
-    mark(center: CGPoint(x: W * 0.24, y: H / 2), size: H * 0.48)
-    text("Tuner", size: H * 0.28, at: CGPoint(x: W * 0.66, y: H / 2))
+    mark(center: CGPoint(x: W / 2 - H * 0.44, y: H / 2), size: H * 0.46)
+    let white = CGColor(red: 0.93, green: 0.96, blue: 0.97, alpha: 1)
+    text("IPTV", size: H * 0.25, at: CGPoint(x: W / 2 - H * 0.06, y: H * 0.585), weight: .heavy, color: white, leading: true)
+    text("Enhanced", size: H * 0.15, at: CGPoint(x: W / 2 - H * 0.055, y: H * 0.37), weight: .semibold, leading: true)
 default:
     fatalError("unknown kind")
 }

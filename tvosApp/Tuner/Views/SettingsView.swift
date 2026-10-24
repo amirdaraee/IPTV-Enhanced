@@ -48,7 +48,7 @@ struct SettingsView: View {
                 row("Hidden groups", nil) { protected { Task { hiddenGroups = (try? await app.core.liveGroups(includeHidden: true))?.filter(\.hidden) ?? [] } } }
                 row("Hidden channels", nil) { protected { Task { hiddenChannels = (try? await app.core.hiddenChannels()) ?? [] } } }
                 header("About")
-                row("Tuner \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")", "Free and open-source (GPL-3.0). Tuner provides no content.") {}
+                row("IPTV Enhanced \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")", "Free and open-source (GPL-3.0). IPTV Enhanced provides no content.") {}
             }
             .padding(.horizontal, 120)
             .padding(.vertical, 60)

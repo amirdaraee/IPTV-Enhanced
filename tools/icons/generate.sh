@@ -53,4 +53,8 @@ shelf() { # name width height
 }
 shelf "Top Shelf Image" 1920 720
 shelf "Top Shelf Image Wide" 2320 720
+# README / store artwork.
+mkdir -p $ROOT/docs/brand
+"$BIN" banner 1280 720 $ROOT/docs/brand/banner.png
+"$BIN" square 512 512 $ROOT/docs/brand/icon.png
 echo "icons generated"
