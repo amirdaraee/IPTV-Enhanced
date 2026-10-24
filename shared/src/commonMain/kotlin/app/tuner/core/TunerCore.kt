@@ -587,9 +587,10 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
             val parts = ref.split(':', limit = 3)
             val sourceId = parts.getOrNull(1)?.toLongOrNull()
             val key = parts.getOrNull(2)
-            if (sourceId == null || key == null || parts[0] != kind) return@io false
-            if (kind == "movie") db.catalogQueries.movieByKey(sourceId, key, ::mapMovie).executeAsOneOrNull()?.locked == true
-            else db.catalogQueries.seriesByKey(sourceId, key, ::mapSeries).executeAsOneOrNull()?.locked == true
+            // Fail closed: an entry we can't tie back to the catalog is treated as locked.
+            if (sourceId == null || key == null || parts[0] != kind) return@io true
+            if (kind == "movie") db.catalogQueries.movieByKey(sourceId, key, ::mapMovie).executeAsOneOrNull()?.locked ?: true
+            else db.catalogQueries.seriesByKey(sourceId, key, ::mapSeries).executeAsOneOrNull()?.locked ?: true
         }
         requireAllowed(locked)
         val source = source(progress.sourceId)

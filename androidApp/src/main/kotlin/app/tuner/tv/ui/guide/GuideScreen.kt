@@ -102,6 +102,8 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
     val nav = LocalNavigator.current
     val scope = rememberCoroutineScope()
     var showGroups by remember { mutableStateOf(false) }
+    // When the panel closes because focus left for the side menu, don't pull it back to the grid.
+    var leavingToMenu by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<Pair<Channel, Programme?>?>(null) }
     var groupMenu by remember { mutableStateOf<Group?>(null) }
     var gate by remember { mutableStateOf<Gate?>(null) }
@@ -196,7 +198,7 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
                     }
                 },
                 onMenu = { groupMenu = it },
-                onLeft = { showGroups = false; onExitLeft() },
+                onLeft = { leavingToMenu = true; showGroups = false; onExitLeft() },
             )
         }
         message?.let { Toast(it, Modifier.align(Alignment.BottomCenter)) }
@@ -206,11 +208,12 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
         if (showGroups) {
             delay(50)
             runCatching { groupsFocus.requestFocus() }
-        } else {
+        } else if (!leavingToMenu) {
             runCatching { focusRequester.requestFocus() }
         }
+        leavingToMenu = false
     }
-    BackHandler(enabled = showGroups) { showGroups = false; onExitLeft() }
+    BackHandler(enabled = showGroups) { leavingToMenu = true; showGroups = false; onExitLeft() }
     BackHandler(enabled = !showGroups) { showGroups = true }
 
     menuFor?.let { (ch, p) ->
