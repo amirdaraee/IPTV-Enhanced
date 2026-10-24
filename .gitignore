@@ -1,0 +1,13 @@
+.gradle/
+build/
+.kotlin/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+tvosApp/build/
+tvosApp/*.xcodeproj/xcuserdata/
+tvosApp/*.xcodeproj/project.xcworkspace/xcuserdata/
+DerivedData/
+*.xcuserstate
