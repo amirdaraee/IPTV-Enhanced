@@ -17,13 +17,13 @@ for i in "${!sources[@]}"; do
   mkdir -p "$dir"
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i "${sources[$i]}" -f lavfi -i "sine=frequency=${freqs[$i]}:sample_rate=48000" \
-    -t 60 -c:v libx264 -preset veryfast -profile:v main -pix_fmt yuv420p -g 50 -keyint_min 50 -sc_threshold 0 \
+    -t 60 -c:v libx264 -preset veryfast -profile:v main -b:v 2M -maxrate 2500k -bufsize 4M -pix_fmt yuv420p -g 50 -keyint_min 50 -sc_threshold 0 \
     -c:a aac -b:a 96k -ac 2 \
     -f hls -hls_time 2 -hls_list_size 0 -hls_segment_filename "$dir/seg%03d.ts" "$dir/index.m3u8"
 done
 if [ ! -f "$OUT/movie.mp4" ]; then
   ffmpeg -hide_banner -loglevel error -y \
     -f lavfi -i "testsrc2=size=1280x720:rate=25" -f lavfi -i "sine=frequency=330:sample_rate=48000" \
-    -t 300 -c:v libx264 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 96k -movflags +faststart "$OUT/movie.mp4"
+    -t 300 -c:v libx264 -preset veryfast -b:v 1500k -maxrate 2M -bufsize 3M -pix_fmt yuv420p -c:a aac -b:a 96k -movflags +faststart "$OUT/movie.mp4"
 fi
 echo "media ready in $OUT"
