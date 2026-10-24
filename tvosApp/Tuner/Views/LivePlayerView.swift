@@ -144,7 +144,7 @@ struct LivePlayerView: View {
                             tune(ch, index: idx)
                         } label: {
                             HStack(spacing: 16) {
-                                Text(ch.number.map { "\($0)" } ?? "").foregroundStyle(Palette.textDim).lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
+                                Text(verbatim: Fmt.number(ch.number)).foregroundStyle(Palette.textDim).lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
                                 Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14)
                                     .frame(width: 64, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
                                 VStack(alignment: .leading, spacing: 2) {
@@ -227,7 +227,7 @@ private struct InfoBar: View {
                 .frame(width: 150, height: 100).clipShape(RoundedRectangle(cornerRadius: 12))
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 14) {
-                    if let n = channel.number { Text("\(n)").foregroundStyle(Palette.accent) }
+                    if channel.number != nil { Text(verbatim: Fmt.number(channel.number)).foregroundStyle(Palette.accent) }
                     Text(channel.name)
                     Pill(text: "LIVE", background: Palette.live.opacity(0.25), foreground: Palette.live)
                     if channel.favorite { Text("★").foregroundStyle(Palette.warning) }

@@ -74,6 +74,9 @@ extension Int64 {
 }
 
 enum Fmt {
+    /// Channel numbers are identifiers: never localised ("9358", not "9.358").
+    static func number(_ n: KotlinInt?) -> String { n.map { String($0.int64Value) } ?? "" }
+
     private static let time: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .none

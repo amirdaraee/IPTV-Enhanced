@@ -274,7 +274,7 @@ struct GuideView: View {
         let focusedRow = model.focusedChannel?.id == ch.id
         return HStack(spacing: 0) {
             HStack(spacing: 14) {
-                Text(ch.number.map { "\($0)" } ?? "").font(.callout).foregroundStyle(playing ? Palette.accent : Palette.textDim)
+                Text(verbatim: Fmt.number(ch.number)).font(.callout).foregroundStyle(playing ? Palette.accent : Palette.textDim)
                     .lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
                 Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16)
                     .frame(width: 70, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
@@ -327,7 +327,7 @@ struct GuideView: View {
                 Color.clear.frame(width: w + 4, height: rowHeight)
             } else {
                 Button { activate(channel, nil) } label: {
-                    Text(label).font(.callout).foregroundStyle(Palette.textDim).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).padding(.horizontal, 18)
+                    GapLabel(text: label)
                 }
                 .buttonStyle(GuideCellStyle(live: false))
                 .frame(width: w, height: rowHeight)
@@ -560,7 +560,7 @@ private struct GuideHeader: View {
                 HStack(spacing: 10) {
                     Text(model.group?.name ?? "").foregroundStyle(Palette.accent)
                     if let ch = model.focusedChannel {
-                        Text("·  \(ch.number.map { "\($0)  " } ?? "")\(ch.name)").foregroundStyle(Palette.textDim).lineLimit(1)
+                        Text(verbatim: "·  \(ch.number == nil ? "" : Fmt.number(ch.number) + "  ")\(ch.name)").foregroundStyle(Palette.textDim).lineLimit(1)
                     }
                 }
                 .font(.callout.weight(.medium))
@@ -630,6 +630,17 @@ private struct ProgrammeCell: View {
                     .padding(.horizontal, 12).padding(.bottom, 8)
             }
         }
+    }
+}
+
+/// "No information" placeholder: dim on the surface, dark on the accent when focused.
+private struct GapLabel: View {
+    let text: String
+    @Environment(\.isFocused) private var focused
+
+    var body: some View {
+        Text(text).font(.callout).foregroundStyle(focused ? Palette.onAccent : Palette.textDim)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).padding(.horizontal, 18)
     }
 }
 

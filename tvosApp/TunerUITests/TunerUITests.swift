@@ -32,6 +32,13 @@ final class TunerUITests: XCTestCase {
         }
     }
 
+    /// Types once the on-screen keyboard has focus; it can take a few seconds to appear.
+    private func type(_ text: String) {
+        let focused = app.descendants(matching: .any).element(matching: NSPredicate(format: "hasKeyboardFocus == true"))
+        _ = focused.waitForExistence(timeout: 8)
+        app.typeText(text)
+    }
+
     func testGuideAndLivePlayback() {
         app.launchArguments = ["-demoXtream", "http://localhost:8900", "-playerHUD"]
         app.launch()
@@ -138,7 +145,7 @@ final class TunerUITests: XCTestCase {
         press(.right, 3, wait: 1.5)
         press(.down, wait: 1.5)
         shot("search-focused")
-        app.typeText("match")
+        type("match")
         Thread.sleep(forTimeInterval: 1)
         shot("search-keyboard")
         press(.down, 4, wait: 0.6)
@@ -155,16 +162,16 @@ final class TunerUITests: XCTestCase {
         press(.down, wait: 1)     // name
         press(.down, wait: 1)     // server
         press(.select, wait: 2)
-        app.typeText("http://localhost:8900")
+        type("http://localhost:8900")
         shot("server-keyboard")
         press(.menu, wait: 1.5)
         press(.down, wait: 1)     // username
         press(.select, wait: 2)
-        app.typeText("demo")
+        type("demo")
         press(.menu, wait: 1.5)
         press(.right, wait: 1)    // password
         press(.select, wait: 2)
-        app.typeText("secret")
+        type("secret")
         press(.menu, wait: 1.5)
         shot("form-filled")
         press(.down, 3, wait: 1)  // epg, user agent, buttons

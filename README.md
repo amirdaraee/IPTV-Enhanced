@@ -109,7 +109,7 @@ To connect:
 In a headless tvOS simulator (no audio device), start the server with `--no-audio`. AVPlayer can't start streams that carry audio there (CoreMedia error -66681); video-only streams play normally.
 
 Debug builds of the tvOS app accept these launch arguments for testing:
-- `-demoXtream <server>` pre-adds the fixture Xtream account.
+- `-demoXtream <server>` pre-adds the fixture Xtream account; `-demoUser`/`-demoPass` override its credentials and `-demoM3U <url>` adds a playlist.
 - `-debugPlay <url>` opens the system player on a URL; add `-debugLive` for live behaviour.
 - `-playerHUD` shows on-screen player diagnostics.
 
@@ -118,6 +118,16 @@ The tvOS UI tests (`TunerUITests`) drive the Siri Remote against the server:
 ```sh
 cd tvosApp && TEST_RUNNER_SHOTS_DIR=/tmp/shots xcodebuild test -project Tuner.xcodeproj -scheme Tuner \
   -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation) (at 1080p)'
+```
+
+## Testing against real providers
+
+`LiveSourceTest` imports real sources over the network and reports timings, counts and sample playback URLs (written to `shared/build/live-urls.txt`). It is skipped unless configured, so credentials never live in the repo:
+
+```sh
+LIVE_M3U="https://provider.example/playlist.m3u" \
+LIVE_XTREAM="http://provider.example|user|pass" \
+./gradlew :shared:jvmTest --tests '*LiveSourceTest*'
 ```
 
 ## Icons
