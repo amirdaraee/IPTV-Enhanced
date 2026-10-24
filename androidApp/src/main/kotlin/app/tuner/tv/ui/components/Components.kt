@@ -35,6 +35,11 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -171,9 +176,10 @@ fun Badge(text: String, color: Color = Palette.AccentDim, textColor: Color = Pal
 }
 
 /**
- * Remote-friendly text field. Focus lands on a read-only row; pressing OK starts
- * editing and opens the keyboard, and the keyboard's action key (or Back) ends
- * editing, so the D-pad never gets trapped inside the IME.
+ * Remote-friendly text field. It stays read-only while focused, so the D-pad
+ * moves past it; OK starts editing and opens the keyboard, and the keyboard's
+ * action key ends editing. Focus never leaves the field when editing toggles,
+ * which keeps the rest of the screen stable.
  */
 @Composable
 fun TvTextField(
@@ -188,77 +194,52 @@ fun TvTextField(
     onDone: () -> Unit = {},
 ) {
     var editing by remember { mutableStateOf(false) }
-    var editorHadFocus by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
-    val editorFocus = remember { FocusRequester() }
-    val rowFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    val active = editing || focused
+    val shape = RoundedCornerShape(8.dp)
+    LaunchedEffect(editing) { if (editing) keyboard?.show() else keyboard?.hide() }
     Column(modifier) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = if (active) Palette.Accent else Palette.TextDim)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (focused) Palette.Accent else Palette.TextDim)
         Spacer(Modifier.height(6.dp))
-        val shape = RoundedCornerShape(8.dp)
-        if (editing) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = TextStyle(color = Palette.Text, fontSize = 16.sp),
-                cursorBrush = SolidColor(Palette.Accent),
-                visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else keyboardType, imeAction = imeAction),
-                keyboardActions = KeyboardActions(onAny = {
-                    editing = false
-                    keyboard?.hide()
-                    onDone()
-                }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(editorFocus)
-                    .onFocusChanged {
-                        // onFocusChanged also fires (unfocused) on attach; only a real focus loss ends editing.
-                        if (it.isFocused) editorHadFocus = true
-                        else if (editorHadFocus && editing) { editorHadFocus = false; editing = false }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            readOnly = !editing,
+            singleLine = true,
+            textStyle = TextStyle(color = Palette.Text, fontSize = 16.sp),
+            cursorBrush = SolidColor(if (editing) Palette.Accent else Color.Transparent),
+            visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(keyboardType = if (password) KeyboardType.Password else keyboardType, imeAction = imeAction),
+            keyboardActions = KeyboardActions(onAny = {
+                editing = false
+                onDone()
+            }),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (!it.isFocused) editing = false
+                }
+                .onPreviewKeyEvent { e ->
+                    val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+                    when {
+                        !editing && ok && e.type == KeyEventType.KeyUp -> { editing = true; true }
+                        !editing && ok -> true
+                        editing && e.key == Key.Back && e.type == KeyEventType.KeyUp -> { editing = false; true }
+                        else -> false
                     }
-                    .clip(shape)
-                    .background(Palette.SurfaceFocus)
-                    .border(BorderStroke(2.dp, Palette.Accent), shape)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-            )
-            LaunchedEffect(Unit) {
-                runCatching { editorFocus.requestFocus() }
-                keyboard?.show()
-            }
-        } else {
-            Surface(
-                onClick = { editing = true },
-                modifier = Modifier.fillMaxWidth().focusRequester(rowFocus).onFocusChanged { focused = it.isFocused },
-                shape = ClickableSurfaceDefaults.shape(shape),
-                colors = ClickableSurfaceDefaults.colors(
-                    containerColor = Palette.Surface,
-                    focusedContainerColor = Palette.SurfaceFocus,
-                ),
-                scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-                border = ClickableSurfaceDefaults.border(
-                    border = Border(BorderStroke(1.dp, Palette.Outline), shape = shape),
-                    focusedBorder = Border(BorderStroke(2.dp, Palette.Accent), shape = shape),
-                ),
-            ) {
-                val shown = if (password) "•".repeat(value.length) else value
-                Text(
-                    shown.ifEmpty { placeholder },
-                    color = if (value.isEmpty()) Palette.TextDim.copy(alpha = 0.6f) else Palette.Text,
-                    fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                )
-            }
-        }
-    }
-    // Return focus to the row after editing ends (but never steal it on first composition).
-    var wasEditing by remember { mutableStateOf(false) }
-    LaunchedEffect(editing) {
-        if (editing) wasEditing = true
-        else if (wasEditing) { wasEditing = false; runCatching { rowFocus.requestFocus() } }
+                }
+                .clip(shape)
+                .background(if (focused) Palette.SurfaceFocus else Palette.Surface)
+                .border(BorderStroke(if (focused) 2.dp else 1.dp, if (focused) Palette.Accent else Palette.Outline), shape)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) Text(placeholder, color = Palette.TextDim.copy(alpha = 0.6f), fontSize = 16.sp, maxLines = 1)
+                    inner()
+                }
+            },
+        )
     }
 }
 

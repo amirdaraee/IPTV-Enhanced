@@ -51,6 +51,8 @@ abstract class VodViewModel(private val kind: ContentKind) : ViewModel() {
         private set
     var loaded by mutableStateOf(false)
         private set
+    /** Item to put focus back on when returning from its detail screen. */
+    var lastOpenedId: String? = null
     private var endReached = false
     private var loadingMore = false
     private val watcher: Cancellable = core.watchChanges { reload() }

@@ -24,6 +24,7 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import app.tuner.core.model.PlaybackRequest
 import app.tuner.tv.R
+import app.tuner.tv.TunerApplication
 import app.tuner.tv.core
 import app.tuner.tv.playerController
 import app.tuner.tv.ui.LocalNavigator
@@ -49,7 +50,7 @@ fun VodPlayerScreen() {
         val req = request ?: return
         val duration = player.duration.takeIf { it > 0 } ?: 0
         val position = player.currentPosition
-        scope.launch { runCatching { core.saveProgress(req, position, duration) } }
+        TunerApplication.instance.appScope.launch { runCatching { core.saveProgress(req, position, duration) } }
     }
 
     val view = remember {

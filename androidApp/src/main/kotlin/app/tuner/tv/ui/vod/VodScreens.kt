@@ -69,6 +69,7 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
     LaunchedEffect(Unit) { if (!vm.loaded) vm.reload() }
 
     fun open(item: VodItem) {
+        vm.lastOpenedId = item.id
         when (item) {
             is VodItem.MovieItem -> nav.push(Screen.MovieDetail(item.movie.id))
             is VodItem.SeriesItem -> nav.push(Screen.SeriesDetail(item.series.id))
@@ -127,8 +128,20 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
                 }
             }
         }
-        val gridState = rememberLazyGridState()
-        LaunchedEffect(vm.group?.id) { gridState.scrollToItem(0) }
+        val returnFocus = remember { FocusRequester() }
+        val gridState = rememberLazyGridState(
+            initialFirstVisibleItemIndex = vm.items.indexOfFirst { it.id == vm.lastOpenedId }.coerceAtLeast(0),
+        )
+        LaunchedEffect(Unit) {
+            if (vm.lastOpenedId != null) {
+                kotlinx.coroutines.delay(250) // after HomeScreen's initial focus request
+                runCatching { returnFocus.requestFocus() }
+            }
+        }
+        var shownGroup by remember { mutableStateOf(vm.group?.id) }
+        LaunchedEffect(vm.group?.id) {
+            if (vm.group?.id != shownGroup) { shownGroup = vm.group?.id; vm.lastOpenedId = null; gridState.scrollToItem(0) }
+        }
         LaunchedEffect(gridState) {
             snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
                 .collect { last -> if (last >= vm.items.size - 24) vm.loadMore() }
@@ -145,7 +158,11 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 itemsIndexed(vm.items, key = { _, it -> it.id }) { _, item ->
-                    PosterCard(item, onClick = { open(item) }, onLongClick = { menu = item })
+                    val restore = item.id == vm.lastOpenedId
+                    PosterCard(
+                        item, onClick = { open(item) }, onLongClick = { menu = item },
+                        modifier = if (restore) Modifier.focusRequester(returnFocus) else Modifier,
+                    )
                 }
             }
         }
@@ -176,9 +193,9 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
 }
 
 @Composable
-private fun PosterCard(item: VodItem, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun PosterCard(item: VodItem, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
     Column {
-        FocusSurface(onClick = onClick, onLongClick = onLongClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), scale = 1.08f) {
+        FocusSurface(onClick = onClick, onLongClick = onLongClick, modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f), scale = 1.08f) {
             Box {
                 Artwork(item.image, item.title, Modifier.fillMaxSize(), fontSize = 26)
                 val fav = (item as? VodItem.MovieItem)?.movie?.favorite == true || (item as? VodItem.SeriesItem)?.series?.favorite == true

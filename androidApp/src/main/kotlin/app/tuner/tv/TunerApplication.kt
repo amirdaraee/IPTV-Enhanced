@@ -9,12 +9,16 @@ import coil3.PlatformContext as CoilContext
 import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
+import kotlinx.coroutines.MainScope
 
 class TunerApplication : Application(), SingletonImageLoader.Factory {
     lateinit var core: TunerCore
         private set
     lateinit var player: PlayerController
         private set
+
+    /** For work that must outlive a screen, such as saving progress when the player closes. */
+    val appScope = MainScope()
 
     override fun onCreate() {
         super.onCreate()

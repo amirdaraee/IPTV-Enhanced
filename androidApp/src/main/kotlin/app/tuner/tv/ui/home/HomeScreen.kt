@@ -28,7 +28,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,7 +59,7 @@ import app.tuner.tv.ui.vod.MoviesScreen
 import app.tuner.tv.ui.vod.SeriesScreen
 import kotlinx.coroutines.delay
 
-private enum class Tab(val label: String, val icon: ImageVector) {
+enum class Tab(val label: String, val icon: ImageVector) {
     Live("Live TV", Icons.Outlined.LiveTv),
     Movies("Movies", Icons.Outlined.Movie),
     Series("Series", Icons.Outlined.VideoLibrary),
@@ -68,10 +67,15 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     Settings("Settings", Icons.Outlined.Settings),
 }
 
+/** Survives HomeScreen leaving composition (e.g. while a detail screen or player is open). */
+object HomeState {
+    var tab by mutableStateOf(Tab.Live)
+}
+
 /** Left rail (expands when focused) + the selected tab. The guide is the default tab. */
 @Composable
 fun HomeScreen(onExit: () -> Unit) {
-    var tab by rememberSaveable { mutableStateOf(Tab.Live) }
+    var tab by HomeState::tab
     var railFocused by remember { mutableStateOf(false) }
     var confirmExit by remember { mutableStateOf(false) }
     var syncing by remember { mutableStateOf<List<SyncState>>(emptyList()) }
