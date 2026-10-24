@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 12 and newer: same scope as backup_rules.xml, for cloud backup and device transfer. -->
 <data-extraction-rules>
-    <cloud-backup>
+    <!-- The snapshot holds playlist passwords: only upload it when the backup is end-to-end
+         encrypted (the device has a screen lock); otherwise Android skips the cloud backup. -->
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
         <include domain="file" path="user-data.json" />
     </cloud-backup>
     <device-transfer>

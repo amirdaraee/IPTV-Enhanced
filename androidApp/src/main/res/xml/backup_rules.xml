@@ -2,5 +2,6 @@
 <!-- Android 11 and older. Only the user's own data (playlists, favorites, progress, settings);
      the catalog database and artwork cache are large and re-sync from the provider. -->
 <full-backup-content>
-    <include domain="file" path="user-data.json" />
+    <!-- Holds playlist passwords: only in end-to-end encrypted backups (Android 9+ with a screen lock). -->
+    <include domain="file" path="user-data.json" requireFlags="clientSideEncryption" />
 </full-backup-content>

@@ -776,6 +776,7 @@ class TunerCore internal constructor(
             db.userQueries.putSetting(PIN_HASH, Sha256.hex(salt + pin))
         }
         sessionUnlocked = false
+        changed(Changes.SETTINGS) // so the backup copy carries the new PIN
     }
 
     fun clearPin() {
@@ -785,6 +786,7 @@ class TunerCore internal constructor(
             db.userQueries.removeSetting(PIN_FAILURES)
             db.userQueries.removeSetting(PIN_LOCKED_UNTIL)
         }
+        changed(Changes.SETTINGS)
     }
 
     /**
@@ -843,8 +845,8 @@ class TunerCore internal constructor(
         private const val PREVIOUS_CHANNEL = "previous_channel"
         private const val PIN_HASH = "pin_hash"
         private const val PIN_SALT = "pin_salt"
-        private const val PIN_FAILURES = "pin_failures"
-        private const val PIN_LOCKED_UNTIL = "pin_locked_until"
+        internal const val PIN_FAILURES = "pin_failures"
+        internal const val PIN_LOCKED_UNTIL = "pin_locked_until"
         private const val MAX_PIN_ATTEMPTS = 5
     }
 }

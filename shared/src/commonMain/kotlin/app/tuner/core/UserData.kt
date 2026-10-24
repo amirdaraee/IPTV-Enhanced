@@ -81,7 +81,10 @@ internal object UserData {
                 )
             },
             recents = db.userQueries.allRecents().executeAsList().map { RecentSnap(it.source_id, it.ckey, it.watched_at) },
-            settings = db.userQueries.allSettings().executeAsList().associate { it.skey to it.value_ },
+            // The wrong-PIN lockout is transient state; restoring an older value must never shorten it.
+            settings = db.userQueries.allSettings().executeAsList()
+                .filter { it.skey != TunerCore.PIN_FAILURES && it.skey != TunerCore.PIN_LOCKED_UNTIL }
+                .associate { it.skey to it.value_ },
         )
         return json.encodeToString(UserSnapshot.serializer(), snapshot)
     }
