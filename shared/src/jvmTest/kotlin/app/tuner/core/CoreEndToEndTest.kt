@@ -194,6 +194,20 @@ class CoreEndToEndTest {
         core.unlock("1234")
         core.playChannel(lockedNews)
 
+        // continue-watching resume honours locks
+        core.lockSession()
+        core.setGroupLocked(movieGroup, true)
+        val resume = core.continueWatching(10).single()
+        assertFailsWith<LockedException> { core.playProgress(resume) }
+        core.unlock("1234")
+        assertEquals(595_000, core.playProgress(resume).startPositionMs)
+
+        // PIN brute-force lockout
+        core.lockSession()
+        repeat(5) { assertFalse(core.unlock("9999")) }
+        assertTrue(core.pinLockoutRemainingMs() > 0)
+        assertFalse(core.unlock("1234"), "even the right PIN is refused during lockout")
+
         core.deleteSource(id)
         assertTrue(core.sources().isEmpty())
         assertEquals(3, core.liveGroups(false).size)

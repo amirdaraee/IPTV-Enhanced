@@ -573,6 +573,33 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
         changed()
     }
 
+    /**
+     * Resumes a "Continue watching" entry. The owning movie or series is looked
+     * up so parental locks apply exactly as when opening it from its category.
+     */
+    @Throws(Exception::class)
+    suspend fun playProgress(progress: WatchProgress): PlaybackRequest {
+        val locked = io {
+            val (kind, ref) = when (progress.kind) {
+                ContentKind.MOVIE -> "movie" to progress.key
+                else -> "series" to (progress.parentKey ?: "")
+            }
+            val parts = ref.split(':', limit = 3)
+            val sourceId = parts.getOrNull(1)?.toLongOrNull()
+            val key = parts.getOrNull(2)
+            if (sourceId == null || key == null || parts[0] != kind) return@io false
+            if (kind == "movie") db.catalogQueries.movieByKey(sourceId, key, ::mapMovie).executeAsOneOrNull()?.locked == true
+            else db.catalogQueries.seriesByKey(sourceId, key, ::mapSeries).executeAsOneOrNull()?.locked == true
+        }
+        requireAllowed(locked)
+        val source = source(progress.sourceId)
+        return PlaybackRequest(
+            progress.url, progress.title, progress.subtitle, progress.image, source?.userAgent, null,
+            isLive = false, startPositionMs = resumePosition(progress), progressKey = progress.key,
+            progressParentKey = progress.parentKey, sourceId = progress.sourceId, kind = progress.kind, channelId = null,
+        )
+    }
+
     @Throws(Exception::class)
     suspend fun clearProgress(key: String) {
         io { db.userQueries.deleteProgress(key) }
@@ -627,16 +654,41 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
         db.transaction {
             db.userQueries.removeSetting(PIN_HASH)
             db.userQueries.removeSetting(PIN_SALT)
+            db.userQueries.removeSetting(PIN_FAILURES)
+            db.userQueries.removeSetting(PIN_LOCKED_UNTIL)
         }
     }
 
-    /** Verifies the PIN; on success, locked content stays unlocked until [lockSession]. */
+    /**
+     * Verifies the PIN; on success, locked content stays unlocked until [lockSession].
+     * After 5 wrong attempts further tries are refused for a growing period
+     * (30 s, doubling, capped at 15 min); the counter survives restarts.
+     */
     fun unlock(pin: String): Boolean {
-        val hash = db.userQueries.getSetting(PIN_HASH).executeAsOneOrNull() ?: return true
-        val salt = db.userQueries.getSetting(PIN_SALT).executeAsOneOrNull().orEmpty()
+        val q = db.userQueries
+        val hash = q.getSetting(PIN_HASH).executeAsOneOrNull() ?: return true
+        if (pinLockoutRemainingMs() > 0) return false
+        val salt = q.getSetting(PIN_SALT).executeAsOneOrNull().orEmpty()
         val ok = Sha256.hex(salt + pin) == hash
-        if (ok) sessionUnlocked = true
+        if (ok) {
+            sessionUnlocked = true
+            q.removeSetting(PIN_FAILURES)
+            q.removeSetting(PIN_LOCKED_UNTIL)
+        } else {
+            val failures = (q.getSetting(PIN_FAILURES).executeAsOneOrNull()?.toIntOrNull() ?: 0) + 1
+            q.putSetting(PIN_FAILURES, failures.toString())
+            if (failures >= MAX_PIN_ATTEMPTS) {
+                val delay = (30_000L shl (failures - MAX_PIN_ATTEMPTS).coerceAtMost(5)).coerceAtMost(15 * 60_000L)
+                q.putSetting(PIN_LOCKED_UNTIL, (nowMillis() + delay).toString())
+            }
+        }
         return ok
+    }
+
+    /** Milliseconds until PIN entry is allowed again after too many wrong attempts (0 = allowed). */
+    fun pinLockoutRemainingMs(): Long {
+        val until = db.userQueries.getSetting(PIN_LOCKED_UNTIL).executeAsOneOrNull()?.toLongOrNull() ?: return 0
+        return (until - nowMillis()).coerceAtLeast(0)
     }
 
     private fun requireAllowed(locked: Boolean) {
@@ -662,5 +714,8 @@ class TunerCore internal constructor(driver: SqlDriver, private val http: HttpCl
         private const val PREVIOUS_CHANNEL = "previous_channel"
         private const val PIN_HASH = "pin_hash"
         private const val PIN_SALT = "pin_salt"
+        private const val PIN_FAILURES = "pin_failures"
+        private const val PIN_LOCKED_UNTIL = "pin_locked_until"
+        private const val MAX_PIN_ATTEMPTS = 5
     }
 }

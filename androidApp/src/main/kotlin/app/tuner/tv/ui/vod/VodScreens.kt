@@ -73,13 +73,19 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
             is VodItem.MovieItem -> nav.push(Screen.MovieDetail(item.movie.id))
             is VodItem.SeriesItem -> nav.push(Screen.SeriesDetail(item.series.id))
             is VodItem.ResumeItem -> {
-                val p = item.progress
-                VodSession.request = app.tuner.core.model.PlaybackRequest(
-                    p.url, p.title, p.subtitle, p.image, null, null, isLive = false,
-                    startPositionMs = (p.positionMs - 5_000).coerceAtLeast(0), progressKey = p.key,
-                    progressParentKey = p.parentKey, sourceId = p.sourceId, kind = p.kind, channelId = null,
-                )
-                nav.push(Screen.VodPlayer)
+                fun resume() {
+                    scope.launch {
+                        try {
+                            VodSession.request = core.playProgress(item.progress)
+                            nav.push(Screen.VodPlayer)
+                        } catch (e: app.tuner.core.LockedException) {
+                            gate = { resume() }
+                        } catch (e: Exception) {
+                            // Source removed or unreachable; nothing to resume.
+                        }
+                    }
+                }
+                resume()
             }
         }
     }

@@ -350,3 +350,17 @@ SELECT COUNT(*) FROM movie WHERE source_id = ?;
 
 countSeries:
 SELECT COUNT(*) FROM series WHERE source_id = ?;
+
+movieByKey:
+SELECT m.*, IFNULL(p.favorite, 0) AS favorite, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
+FROM movie m
+LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
+LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
+WHERE m.source_id = ? AND m.ckey = ?;
+
+seriesByKey:
+SELECT se.*, IFNULL(p.favorite, 0) AS favorite, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
+FROM series se
+LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
+LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
+WHERE se.source_id = ? AND se.ckey = ?;

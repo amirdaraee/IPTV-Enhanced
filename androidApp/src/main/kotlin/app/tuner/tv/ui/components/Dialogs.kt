@@ -110,6 +110,12 @@ fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: ()
 fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onDismiss: () -> Unit) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
+    var lockoutSecs by remember { mutableStateOf(0L) }
+    fun refreshLockout() { lockoutSecs = (app.tuner.tv.core.pinLockoutRemainingMs() + 999) / 1000 }
+    LaunchedEffect(Unit) { refreshLockout() }
+    LaunchedEffect(lockoutSecs) {
+        if (lockoutSecs > 0) { kotlinx.coroutines.delay(1000); refreshLockout() }
+    }
     val focus = remember { FocusRequester() }
     fun press(d: String) {
         if (pin.length >= 4) return
@@ -119,6 +125,7 @@ fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onD
             if (!onSubmit(pin)) {
                 error = true
                 pin = ""
+                refreshLockout()
             }
         }
     }
@@ -138,7 +145,14 @@ fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onD
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = Palette.Text)
             Spacer(Modifier.height(4.dp))
-            Text(if (error) "Wrong PIN, try again" else message, color = if (error) Palette.Live else Palette.TextDim, textAlign = TextAlign.Center)
+            Text(
+                when {
+                    lockoutSecs > 0 -> "Too many wrong attempts. Try again in $lockoutSecs s"
+                    error -> "Wrong PIN, try again"
+                    else -> message
+                },
+                color = if (error || lockoutSecs > 0) Palette.Live else Palette.TextDim, textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 repeat(4) { i ->
@@ -158,7 +172,7 @@ fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onD
                                 onClick = {
                                     when (label) {
                                         "⌫" -> pin = pin.dropLast(1)
-                                        "✓" -> if (pin.isNotEmpty() && !onSubmit(pin)) { error = true; pin = "" }
+                                        "✓" -> if (pin.isNotEmpty() && !onSubmit(pin)) { error = true; pin = ""; refreshLockout() }
                                         else -> press(label)
                                     }
                                 },

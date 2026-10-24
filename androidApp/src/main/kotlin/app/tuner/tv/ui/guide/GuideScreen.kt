@@ -210,7 +210,7 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
             runCatching { focusRequester.requestFocus() }
         }
     }
-    BackHandler(enabled = showGroups) { showGroups = false }
+    BackHandler(enabled = showGroups) { showGroups = false; onExitLeft() }
     BackHandler(enabled = !showGroups) { showGroups = true }
 
     menuFor?.let { (ch, p) ->
@@ -582,7 +582,7 @@ private fun GroupsPanel(
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
     Box(
         Modifier.width(300.dp).fillMaxHeight()
-            .background(Brush.horizontalGradient(listOf(Palette.Background, Palette.Background.copy(alpha = 0.96f))))
+            .background(Palette.Surface)
             .onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) { onLeft(); true } else false
             },
