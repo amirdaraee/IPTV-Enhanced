@@ -180,7 +180,7 @@ fun Badge(text: String, color: Color = Palette.AccentDim, textColor: Color = Pal
 /**
  * Remote-friendly text field. It stays read-only while focused, so the D-pad
  * moves past it; OK starts editing and opens the keyboard, and the keyboard's
- * action key ends editing. Focus never leaves the field when editing toggles,
+ * action key (or Up/Down) ends editing. Focus never leaves the field when editing toggles,
  * which keeps the rest of the screen stable.
  */
 @Composable
@@ -197,6 +197,7 @@ fun TvTextField(
 ) {
     var editing by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
+    var okDown by remember { mutableStateOf(false) } // ignore the release of an OK pressed elsewhere
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val shape = RoundedCornerShape(8.dp)
@@ -221,7 +222,7 @@ fun TvTextField(
                 .fillMaxWidth()
                 .onFocusChanged {
                     focused = it.isFocused
-                    if (!it.isFocused) editing = false
+                    if (!it.isFocused) { editing = false; okDown = false }
                 }
                 .onPreviewKeyEvent { e ->
                     val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
@@ -235,8 +236,14 @@ fun TvTextField(
                     when {
                         // Not editing: arrows navigate instead of moving the text cursor.
                         !editing && direction != null -> { if (e.type == KeyEventType.KeyDown) focusManager.moveFocus(direction); true }
-                        !editing && ok && e.type == KeyEventType.KeyUp -> { editing = true; true }
-                        !editing && ok -> true
+                        !editing && ok && e.type == KeyEventType.KeyUp -> { if (okDown) editing = true; okDown = false; true }
+                        !editing && ok -> { if (e.type == KeyEventType.KeyDown) okDown = true; true }
+                        // Single-line field: Up/Down have no meaning while editing. Closing the
+                        // keyboard with Back doesn't reach us, so leave editing and move on.
+                        editing && (direction == FocusDirection.Up || direction == FocusDirection.Down) -> {
+                            if (e.type == KeyEventType.KeyDown) { editing = false; focusManager.moveFocus(direction!!) }
+                            true
+                        }
                         editing && e.key == Key.Back && e.type == KeyEventType.KeyUp -> { editing = false; true }
                         else -> false
                     }

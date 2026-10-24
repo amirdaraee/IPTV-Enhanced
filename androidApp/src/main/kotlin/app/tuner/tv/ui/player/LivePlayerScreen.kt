@@ -117,6 +117,8 @@ fun LivePlayerScreen() {
     var tuneJob by remember { mutableStateOf<Job?>(null) }
     var lastZap by remember { mutableStateOf(0L) }
     var longPressed by remember { mutableStateOf(false) }
+    // Only a press that started here counts: the OK that opened this screen is released here.
+    var okDown by remember { mutableStateOf(false) }
     var resizeIndex by remember { mutableIntStateOf(0) }
     val listNowPlaying = remember { mutableStateMapOf<Long, String>() }
     val isCatchup = playerController.current?.let { !it.isLive } == true
@@ -218,11 +220,13 @@ fun LivePlayerScreen() {
                 val isOk = code == NativeKeyEvent.KEYCODE_DPAD_CENTER || code == NativeKeyEvent.KEYCODE_ENTER
                 if (isOk) {
                     if (e.type == KeyEventType.KeyDown) {
-                        if (e.nativeKeyEvent.repeatCount == 1 && !longPressed) { longPressed = true; showMenu = true }
+                        if (e.nativeKeyEvent.repeatCount == 0) okDown = true
+                        if (okDown && e.nativeKeyEvent.repeatCount == 1 && !longPressed) { longPressed = true; showMenu = true }
                         return@onPreviewKeyEvent true
                     }
                     if (e.type == KeyEventType.KeyUp) {
-                        if (!longPressed) { if (isCatchup) flashInfo() else showList = true }
+                        if (okDown && !longPressed) { if (isCatchup) flashInfo() else showList = true }
+                        okDown = false
                         longPressed = false
                         return@onPreviewKeyEvent true
                     }

@@ -332,6 +332,9 @@ private fun GuideGrid(
 ) {
     var focused by remember { mutableStateOf(false) }
     var longPressed by remember { mutableStateOf(false) }
+    // OK pressed elsewhere (a menu item, a group) moves focus here before the key is
+    // released; only a press that started on the grid may play or open the menu.
+    var okDown by remember { mutableStateOf(false) }
     val minTime = now - core.settings.guidePastDays * 24 * HOUR
     val maxTime = now + core.settings.guideFutureDays * 24 * HOUR
 
@@ -378,20 +381,22 @@ private fun GuideGrid(
     BoxWithConstraints(
         modifier
             .fillMaxSize()
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged { focused = it.isFocused; if (!it.isFocused) okDown = false }
             .onPreviewKeyEvent { e ->
                 val code = e.key.nativeKeyCode
                 val isOk = code == NativeKeyEvent.KEYCODE_DPAD_CENTER || code == NativeKeyEvent.KEYCODE_ENTER || code == NativeKeyEvent.KEYCODE_NUMPAD_ENTER
                 if (isOk) {
                     if (e.type == KeyEventType.KeyDown) {
-                        if (e.nativeKeyEvent.repeatCount == 1 && !longPressed) {
+                        if (e.nativeKeyEvent.repeatCount == 0) okDown = true
+                        if (okDown && e.nativeKeyEvent.repeatCount == 1 && !longPressed) {
                             longPressed = true
                             vm.focusedChannel()?.let { onMenu(it, current()) }
                         }
                         return@onPreviewKeyEvent true
                     }
                     if (e.type == KeyEventType.KeyUp) {
-                        if (!longPressed) vm.focusedChannel()?.let { onActivate(it, current()) }
+                        if (okDown && !longPressed) vm.focusedChannel()?.let { onActivate(it, current()) }
+                        okDown = false
                         longPressed = false
                         return@onPreviewKeyEvent true
                     }
