@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import TunerCore
 
@@ -25,7 +26,7 @@ final class GuideModel: ObservableObject {
     private var requested = Set<Int64>()
     private var pendingRows: [Int64: Channel] = [:]
     private var batchScheduled = false
-    private var subscription: Subscription?
+    private var subscription: TunerCore.Subscription?
     weak var app: AppModel?
 
     /// Subscribes to the changes the guide shows; the first callback does the initial load.

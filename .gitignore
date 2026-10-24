@@ -7,7 +7,8 @@ local.properties
 .DS_Store
 captures/
 tvosApp/build/
-tvosApp/*.xcodeproj/xcuserdata/
-tvosApp/*.xcodeproj/project.xcworkspace/xcuserdata/
+# Generated from tvosApp/project.yml by `xcodegen generate`.
+tvosApp/*.xcodeproj/
+*.xcresult/
 DerivedData/
 *.xcuserstate

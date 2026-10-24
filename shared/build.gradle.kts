@@ -8,6 +8,9 @@ plugins {
 }
 
 kotlin {
+    // expect/actual classes (PlatformContext, Inflater) are stable enough for this project.
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
+
     androidLibrary {
         namespace = "app.tuner.core"
         compileSdk = libs.versions.compileSdk.get().toInt()

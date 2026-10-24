@@ -1,4 +1,4 @@
-# Tuner: Implementation Plan
+# IPTV Enhanced: Implementation Plan
 
 Companion to [SPEC.md](../spec/SPEC.md). Tasks are ordered by dependency. `[x]` means done and committed.
 

@@ -9,8 +9,9 @@ let w = Int(args[2])!, h = Int(args[3])!
 let out = URL(fileURLWithPath: args[4])
 
 let cs = CGColorSpaceCreateDeviceRGB()
-let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: cs,
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+// Only the tvOS front layer is transparent; opaque images skip the alpha channel (smaller PNGs).
+let alpha: CGImageAlphaInfo = kind == "front" ? .premultipliedLast : .noneSkipLast
+let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: alpha.rawValue)!
 let W = CGFloat(w), H = CGFloat(h)
 let accent = CGColor(red: 0.369, green: 0.918, blue: 0.831, alpha: 1)
 

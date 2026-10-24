@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import SwiftUI
 import TunerCore
 
@@ -36,6 +37,8 @@ struct LivePlayerView: View {
     @State private var message: String?
     @State private var tuneTask: Task<Void, Never>?
     @State private var lastZap = Date.distantPast
+    /// Audio and subtitle tracks of the current item, loaded when the options menu opens.
+    @State private var tracks: (audio: AVMediaSelectionGroup?, legible: AVMediaSelectionGroup?) = (nil, nil)
     @FocusState private var focus: LiveFocus?
 
     enum LiveFocus: Hashable { case surface, channel(Int64) }
@@ -102,6 +105,10 @@ struct LivePlayerView: View {
             message = nil
         }
         .confirmationDialog(channel?.name ?? "Options", isPresented: $showOptions) { optionsMenu }
+        .task(id: showOptions) {
+            guard showOptions, let asset = engine.player.currentItem?.asset else { return }
+            tracks = (try? await asset.loadMediaSelectionGroup(for: .audible), try? await asset.loadMediaSelectionGroup(for: .legible))
+        }
         .pinGate(gate)
     }
 
@@ -120,18 +127,18 @@ struct LivePlayerView: View {
             Task { if let prev = try? await app.core.previousChannel() { tune(prev) } else { message = "No previous channel" } }
         }
         if let item = engine.player.currentItem {
-            ForEach(Array(mediaOptions(item, .audible).enumerated()), id: \.offset) { _, opt in
-                Button("Audio: \(opt.displayName)") { item.select(opt, in: item.asset.mediaSelectionGroup(forMediaCharacteristic: .audible)!) }
+            if let group = tracks.audio {
+                ForEach(Array(group.options.enumerated()), id: \.offset) { _, opt in
+                    Button("Audio: \(opt.displayName)") { item.select(opt, in: group) }
+                }
             }
-            ForEach(Array(mediaOptions(item, .legible).enumerated()), id: \.offset) { _, opt in
-                Button("Subtitles: \(opt.displayName)") { item.select(opt, in: item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible)!) }
+            if let group = tracks.legible {
+                ForEach(Array(group.options.enumerated()), id: \.offset) { _, opt in
+                    Button("Subtitles: \(opt.displayName)") { item.select(opt, in: group) }
+                }
             }
         }
         Button("Cancel", role: .cancel) {}
-    }
-
-    private func mediaOptions(_ item: AVPlayerItem, _ c: AVMediaCharacteristic) -> [AVMediaSelectionOption] {
-        item.asset.mediaSelectionGroup(forMediaCharacteristic: c)?.options ?? []
     }
 
     private var channelList: some View {

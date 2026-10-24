@@ -1,4 +1,4 @@
-# Tuner: Feature List
+# IPTV Enhanced: Feature List
 
 Legend: **P0** = v1.0 (this build), **P1** = v1.x, **P2** = later. Platform: A = Android TV, T = tvOS, both if blank.
 

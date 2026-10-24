@@ -241,7 +241,7 @@ fun TvTextField(
                         // Single-line field: Up/Down have no meaning while editing. Closing the
                         // keyboard with Back doesn't reach us, so leave editing and move on.
                         editing && (direction == FocusDirection.Up || direction == FocusDirection.Down) -> {
-                            if (e.type == KeyEventType.KeyDown) { editing = false; focusManager.moveFocus(direction!!) }
+                            if (e.type == KeyEventType.KeyDown) { editing = false; focusManager.moveFocus(direction) }
                             true
                         }
                         editing && e.key == Key.Back && e.type == KeyEventType.KeyUp -> { editing = false; true }

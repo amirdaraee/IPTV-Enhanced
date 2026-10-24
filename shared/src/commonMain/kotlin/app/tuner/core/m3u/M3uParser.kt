@@ -108,6 +108,7 @@ class M3uParser(
         }
     }
 
+    /** `#KODIPROP:` lines; only the adaptive-stream header properties matter for playback. */
     private fun parseProperty(prop: String) {
         val eq = prop.indexOf('=')
         if (eq < 0) return

@@ -123,6 +123,8 @@ class CoreEndToEndTest {
         val deadline = System.currentTimeMillis() + 5_000
         while (store.saved?.contains("\"use_24h\"") != true && System.currentTimeMillis() < deadline) Thread.sleep(50)
         assertNotNull(store.saved)
+        assertEquals(a.exportUserData(), store.saved, "the backup holds the latest data")
+        a.close()
 
         // The database is gone (tvOS purged Caches, or a new install restored from Google).
         val b = TunerCore(freshDriver(), HttpClient(engine()), store)

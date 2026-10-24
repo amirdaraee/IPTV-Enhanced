@@ -7,7 +7,12 @@ enum class SourceType { M3U, XTREAM }
 
 enum class ContentKind { LIVE, MOVIE, SERIES }
 
-/** How catch-up URLs are built for a channel. */
+/**
+ * How catch-up URLs are built for a channel, from the M3U `catchup` attribute or the Xtream API:
+ * DEFAULT uses the playlist's `catchup-source` template as is, APPEND adds it to the live URL,
+ * SHIFT adds `utc`/`lutc` query parameters, FLUSSONIC uses the `<channel>-<start>-<duration>`
+ * path form, and XTREAM uses the panel's `timeshift` endpoint.
+ */
 enum class CatchupMode { NONE, DEFAULT, APPEND, SHIFT, FLUSSONIC, XTREAM }
 
 data class Source(

@@ -40,7 +40,7 @@ final class VodModel: ObservableObject {
     @Published var loaded = false
     private var endReached = true
     private var loadingMore = false
-    private static let page: Int32 = 200
+    nonisolated private static let page: Int32 = 200
     weak var app: AppModel?
 
     init(kind: ContentKind) { self.kind = kind }
