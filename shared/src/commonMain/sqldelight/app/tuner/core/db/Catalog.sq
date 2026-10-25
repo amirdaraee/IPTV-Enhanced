@@ -385,8 +385,21 @@ SELECT locked FROM group_pref WHERE source_id = ? AND kind = ? AND ckey = ?;
 itemPrefKeys:
 SELECT DISTINCT ckey FROM item_pref WHERE source_id = ?;
 
-rekeyItemPref:
-UPDATE OR IGNORE item_pref SET ckey = :newKey WHERE source_id = :sourceId AND ckey = :oldKey;
+itemPrefsForKey:
+SELECT * FROM item_pref WHERE source_id = ? AND ckey = ?;
+
+itemPref:
+SELECT * FROM item_pref WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+deleteItemPrefsForKey:
+DELETE FROM item_pref WHERE source_id = ? AND ckey = ?;
+
+-- Candidates for the copies of an item ("key", "key#2"…); the caller checks the suffix.
+channelKeysWithPrefix:
+SELECT ckey FROM channel WHERE source_id = :sourceId AND instr(ckey, CAST(:prefix AS TEXT)) = 1;
+
+movieKeysWithPrefix:
+SELECT ckey FROM movie WHERE source_id = :sourceId AND instr(ckey, CAST(:prefix AS TEXT)) = 1;
 
 allItemPrefs:
 SELECT * FROM item_pref WHERE favorite = 1 OR hidden = 1 OR locked = 1;

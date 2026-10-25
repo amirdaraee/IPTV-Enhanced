@@ -388,6 +388,35 @@ class StressTest {
         assertTrue(e.core.channels(e.core.group { it.type == GroupType.RECENTS }, false).any { it.name == "A" })
     }
 
+    // Upgrade: repeated entries used to share one key, so one lock covered every copy. After the
+    // move to "key", "key#2"… every copy must stay locked, and a newer row must not clear it.
+    @Test
+    fun legacyLockCoversEveryCopyAfterMigration() = runBlocking {
+        val e = env()
+        e.fake.text("m.test/d.m3u") { m3u(null, extinf("X", "G", "http://s/1.ts", "x.id"), extinf("X", "G", "http://s/2.ts", "x.id")) }
+        val id = e.core.addAndSync(SourceInput("D", SourceType.M3U, "http://m.test/d.m3u"))
+        e.db.catalogQueries.restoreItemPref(id, "LIVE", "G|X|x.id", 0, 0, 0, 1)
+        // A row already under one of the new keys (favorited since), unlocked.
+        e.db.catalogQueries.restoreItemPref(id, "LIVE", "tvg:x.id#2", 1, 5, 0, 0)
+        assertNull(e.core.refreshNow(id))
+        val copies = e.core.channels(e.core.group { it.type == GroupType.CATEGORY }, true)
+        assertEquals(2, copies.size)
+        assertTrue(copies.all { it.locked }, "copies after migration: ${copies.map { it.key to it.locked }}")
+        assertTrue(copies.first { it.key == "tvg:x.id#2" }.favorite)
+    }
+
+    @Test
+    fun lockingAChannelLocksItsCopies() = runBlocking {
+        val e = env()
+        e.fake.text("m.test/c.m3u") {
+            m3u(null, extinf("X", "G", "http://s/1.ts", "x.id"), extinf("X", "G", "http://s/2.ts", "x.id"), extinf("Y", "G", "http://s/3.ts", "x.idy"))
+        }
+        val id = e.core.addAndSync(SourceInput("C", SourceType.M3U, "http://m.test/c.m3u"))
+        e.core.setLocked(ContentKind.LIVE, id, "tvg:x.id#2", true)
+        val all = e.core.channels(e.core.group { it.type == GroupType.CATEGORY }, true).associate { it.key to it.locked }
+        assertEquals(mapOf("tvg:x.id" to true, "tvg:x.id#2" to true, "tvg:x.idy" to false), all)
+    }
+
     // Two playlists with the same name: their groups (and other items) must still be told apart.
     @Test
     fun sameNamedSourcesGetDistinctLabels() = runBlocking {

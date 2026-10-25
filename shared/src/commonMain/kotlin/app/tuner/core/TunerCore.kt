@@ -599,8 +599,28 @@ class TunerCore internal constructor(
     }
 
     @Throws(Exception::class)
-    suspend fun setLocked(kind: ContentKind, sourceId: Long, key: String, locked: Boolean) = itemPref(kind, sourceId, key) {
-        db.catalogQueries.setItemLocked(locked.toLong(), sourceId, kind.name, key)
+    suspend fun setLocked(kind: ContentKind, sourceId: Long, key: String, locked: Boolean) {
+        io {
+            db.transaction {
+                // A playlist that repeats an entry gets "key", "key#2"…; a lock must cover every copy.
+                for (k in copyKeys(kind, sourceId, key)) {
+                    db.catalogQueries.ensureItemPref(sourceId, kind.name, k)
+                    db.catalogQueries.setItemLocked(locked.toLong(), sourceId, kind.name, k)
+                }
+            }
+        }
+        changed(Changes.PREFS)
+    }
+
+    /** An item and its repeated copies in the same playlist (see SourceSyncer's uniqueKey). */
+    private fun copyKeys(kind: ContentKind, sourceId: Long, key: String): List<String> {
+        val base = key.replace(COPY_SUFFIX, "")
+        val candidates = when (kind) {
+            ContentKind.LIVE -> db.catalogQueries.channelKeysWithPrefix(sourceId, base).executeAsList()
+            ContentKind.MOVIE -> db.catalogQueries.movieKeysWithPrefix(sourceId, base).executeAsList()
+            else -> emptyList()
+        }
+        return (candidates.filter { it == base || COPY_ONLY.matches(it.removePrefix(base)) } + key).distinct()
     }
 
     private suspend fun itemPref(kind: ContentKind, sourceId: Long, key: String, block: () -> Unit) {
@@ -957,6 +977,8 @@ class TunerCore internal constructor(
         private const val KINDS = 5
         /** A safety cap on "All channels", above the largest lineups seen in practice. */
         private const val MAX_ALL = 50_000L
+        private val COPY_SUFFIX = Regex("#\\d+$")
+        private val COPY_ONLY = Regex("#\\d+")
         internal const val LAST_CHANNEL = "last_channel"
         internal const val PREVIOUS_CHANNEL = "previous_channel"
         private const val PIN_HASH = "pin_hash"

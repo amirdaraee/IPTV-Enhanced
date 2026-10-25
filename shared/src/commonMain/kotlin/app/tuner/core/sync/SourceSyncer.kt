@@ -75,18 +75,37 @@ internal class SourceSyncer(
         }
     }
 
-    /** Moves the user's data from old item keys to new ones (see [m3uKey]); a key already in use keeps its data. */
-    private fun rekey(sourceId: Long, keys: Map<String, String>) {
+    /**
+     * Moves the user's data from old item keys to the new ones (see [m3uKey]). An old key can
+     * become several new ones (repeated entries used to share one key): hidden and locked carry
+     * over to every copy and are merged, never cleared; favorite, history and progress go to the
+     * first copy.
+     */
+    private fun rekey(sourceId: Long, keys: Map<String, List<String>>) {
         if (keys.isEmpty()) return
         val u = db.userQueries
         for ((old, new) in keys) {
-            catalog.rekeyItemPref(new, sourceId, old)
-            u.rekeyRecent(new, sourceId, old)
-            u.rekeyProgress("movie:$sourceId:$new", "movie:$sourceId:$old")
+            val prefs = catalog.itemPrefsForKey(sourceId, old).executeAsList()
+            for (p in prefs) {
+                new.forEachIndexed { i, key ->
+                    val cur = catalog.itemPref(sourceId, p.kind, key).executeAsOneOrNull()
+                    val favorite = cur?.favorite == 1L || (i == 0 && p.favorite == 1L)
+                    catalog.restoreItemPref(
+                        sourceId, p.kind, key,
+                        favorite = if (favorite) 1L else 0L,
+                        favorite_at = if (cur?.favorite == 1L) cur.favorite_at else p.favorite_at,
+                        hidden = maxOf(p.hidden, cur?.hidden ?: 0L),
+                        locked = maxOf(p.locked, cur?.locked ?: 0L),
+                    )
+                }
+            }
+            if (prefs.isNotEmpty()) catalog.deleteItemPrefsForKey(sourceId, old)
+            u.rekeyRecent(new.first(), sourceId, old)
+            u.rekeyProgress("movie:$sourceId:${new.first()}", "movie:$sourceId:$old")
         }
         for (s in LAST_CHANNELS) {
             val key = u.getSetting(s).executeAsOneOrNull()?.takeIf { it.startsWith("$sourceId|") }?.substringAfter('|') ?: continue
-            keys[key]?.let { u.putSetting(s, "$sourceId|$it") }
+            keys[key]?.let { u.putSetting(s, "$sourceId|${it.first()}") }
         }
     }
 
@@ -100,7 +119,7 @@ internal class SourceSyncer(
     // ---------------------------------------------------------------- M3U
 
     /** Returns old → new keys for items the user has data under, for [rekey]. */
-    private suspend fun syncM3u(source: Source, progress: ProgressSink): Map<String, String> {
+    private suspend fun syncM3u(source: Source, progress: ProgressSink): Map<String, List<String>> {
         val staging = -source.id
         val pending = ArrayList<M3uEntry>(BATCH)
         val groups = HashMap<Pair<ContentKind, String>, Int>()
@@ -112,14 +131,15 @@ internal class SourceSyncer(
         val keyCounts = HashMap<String, Int>()
         // Keys used to be "group|name|tvg-id"; data saved under that form moves to the current key.
         val saved = userKeys(source.id)
-        val rekeys = HashMap<String, String>()
+        val rekeys = HashMap<String, MutableList<String>>()
         fun uniqueKey(e: M3uEntry, group: String): String {
             val base = m3uKey(e, group)
             val n = (keyCounts[base] ?: 0) + 1
             keyCounts[base] = n
+            val key = if (n == 1) base else "$base#$n"
             val legacy = "$group|${e.name}|${e.tvgId.orEmpty()}"
-            if (n == 1 && legacy in saved && legacy !in rekeys) rekeys[legacy] = base
-            return if (n == 1) base else "$base#$n"
+            if (legacy in saved) rekeys.getOrPut(legacy) { ArrayList(1) }.add(key)
+            return key
         }
 
         fun flush() {
