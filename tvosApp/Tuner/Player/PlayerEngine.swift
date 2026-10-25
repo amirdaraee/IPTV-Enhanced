@@ -13,6 +13,11 @@ final class PlayerEngine: ObservableObject {
     @Published private(set) var current: PlaybackRequest?
     @Published private(set) var status: String?
     @Published private(set) var isBuffering = false
+    /// When the sleep timer stops playback, or nil when it is off.
+    @Published private(set) var sleepAt: Date?
+    /// Increments each time the sleep timer fires, so open players can close.
+    @Published private(set) var sleepFired = 0
+    private var sleepTask: Task<Void, Never>?
 
     private var retries = 0
     /// False only while the user has paused; stalled live streams auto-resume otherwise.
@@ -66,6 +71,32 @@ final class PlayerEngine: ObservableObject {
         let path = url.components(separatedBy: "?")[0]
         guard path.lowercased().hasSuffix(".ts") else { return nil }
         return String(path.dropLast(3)) + ".m3u8" + (url.contains("?") ? "?" + url.components(separatedBy: "?").dropFirst().joined(separator: "?") : "")
+    }
+
+    /// Stops playback after `minutes`; 0 turns the timer off. It keeps running across channel changes.
+    func setSleepTimer(minutes: Int) {
+        sleepTask?.cancel()
+        guard minutes > 0 else { sleepAt = nil; return }
+        sleepAt = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        sleepTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(minutes) * 60_000_000_000)
+            guard !Task.isCancelled else { return }
+            self.sleepAt = nil
+            self.stop()
+            self.sleepFired += 1
+        }
+    }
+
+    /// Preferred audio and subtitle languages (ISO 639-1; empty = stream default / no subtitles).
+    /// AVPlayer applies them to every item it loads from now on.
+    func setLanguages(audio: String, subtitles: String) {
+        player.appliesMediaSelectionCriteriaAutomatically = true
+        player.setMediaSelectionCriteria(
+            audio.isEmpty ? nil : AVPlayerMediaSelectionCriteria(preferredLanguages: [audio], preferredMediaCharacteristics: nil),
+            forMediaCharacteristic: .audible)
+        player.setMediaSelectionCriteria(
+            subtitles.isEmpty ? nil : AVPlayerMediaSelectionCriteria(preferredLanguages: [subtitles], preferredMediaCharacteristics: nil),
+            forMediaCharacteristic: .legible)
     }
 
     func togglePause() {

@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.C
@@ -25,6 +26,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.UnrecognizedInputFormatException
 import app.tuner.core.model.PlaybackRequest
 import app.tuner.core.platform.DEFAULT_USER_AGENT
+import app.tuner.tv.core
 import okhttp3.OkHttpClient
 
 data class TrackOption(val label: String, val group: Int, val track: Int, val selected: Boolean)
@@ -51,6 +53,27 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     var isPlaying by mutableStateOf(false)
         private set
     var resizeMode by mutableStateOf(0)
+
+    /** When the sleep timer stops playback (epoch millis), or null when it is off. */
+    var sleepAt: Long? by mutableStateOf(null)
+        private set
+    /** Increments each time the sleep timer fires, so the UI can leave the player. */
+    var sleepFired by mutableIntStateOf(0)
+        private set
+    // Separate from [handler]: stop() clears that one, and the timer must outlive a channel change.
+    private val sleepHandler = Handler(Looper.getMainLooper())
+    private val sleep = Runnable {
+        sleepAt = null
+        stop()
+        sleepFired++
+    }
+
+    /** Stops playback after [minutes]; 0 turns the timer off. */
+    fun setSleepTimer(minutes: Int) {
+        sleepHandler.removeCallbacks(sleep)
+        sleepAt = if (minutes > 0) System.currentTimeMillis() + minutes * 60_000L else null
+        if (minutes > 0) sleepHandler.postDelayed(sleep, minutes * 60_000L)
+    }
 
     val player: ExoPlayer = ExoPlayer.Builder(context)
         .setRenderersFactory(DefaultRenderersFactory(context).setEnableDecoderFallback(true))
@@ -89,7 +112,19 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
         retries = 0
         triedHls = false
         status = null
+        applyLanguages()
         prepare(request, forceHls = false)
+    }
+
+    /** The user's preferred audio and subtitle languages; also undoes a track picked by hand for the previous stream. */
+    private fun applyLanguages() {
+        val s = core.settings
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverrides()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .setPreferredAudioLanguage(s.audioLanguage.ifEmpty { null })
+            .setPreferredTextLanguage(s.subtitleLanguage.ifEmpty { null })
+            .build()
     }
 
     private fun prepare(request: PlaybackRequest, forceHls: Boolean) {

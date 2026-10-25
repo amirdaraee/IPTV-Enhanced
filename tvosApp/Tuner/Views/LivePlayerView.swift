@@ -32,6 +32,7 @@ struct LivePlayerView: View {
     @State private var showInfo = true
     @State private var showList = false
     @State private var showOptions = false
+    @State private var showSleep = false
     @State private var fill = false
     @State private var infoTask: Task<Void, Never>?
     @State private var message: String?
@@ -105,6 +106,12 @@ struct LivePlayerView: View {
             message = nil
         }
         .confirmationDialog(channel?.name ?? "Options", isPresented: $showOptions) { optionsMenu }
+        .confirmationDialog("Sleep timer", isPresented: $showSleep) {
+            Button("Off") { engine.setSleepTimer(minutes: 0) }
+            ForEach(SleepTimer.minutes, id: \.self) { m in Button("\(m) minutes") { engine.setSleepTimer(minutes: m) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Stops playback after the time you choose") }
+        .onChange(of: engine.sleepFired) { _, _ in dismiss() }
         .task(id: showOptions) {
             guard showOptions, let asset = engine.player.currentItem?.asset else { return }
             tracks = (try? await asset.loadMediaSelectionGroup(for: .audible), try? await asset.loadMediaSelectionGroup(for: .legible))
@@ -123,6 +130,10 @@ struct LivePlayerView: View {
             }
         }
         Button(fill ? "Picture: Fit" : "Picture: Fill") { fill.toggle() }
+        Button("Sleep timer: \(SleepTimer.label(engine.sleepAt))") {
+            // Let this dialog close before the next one opens.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showSleep = true }
+        }
         Button("Previous channel") {
             Task { if let prev = try? await app.core.previousChannel() { tune(prev) } else { message = "No previous channel" } }
         }
@@ -289,6 +300,8 @@ private struct InfoBar: View {
                     Text(channel.name)
                     Pill(text: "LIVE", background: Palette.live.opacity(0.25), foreground: Palette.live)
                     if channel.favorite { Text("★").foregroundStyle(Palette.warning) }
+                    Spacer()
+                    ClockText()
                 }
                 .font(.title3.weight(.semibold))
                 if let p = current {
@@ -319,6 +332,7 @@ struct InvisibleButtonStyle: ButtonStyle {
 }
 
 /// Movies, episodes and catch-up in the system player. Progress is saved every 10 s and on exit.
+/// When an episode ends, the next one plays after a short countdown; the player's menu bar has a sleep timer.
 struct VodPlayerView: View {
     let request: PlaybackRequest
 
@@ -326,41 +340,114 @@ struct VodPlayerView: View {
     @EnvironmentObject private var engine: PlayerEngine
     @Environment(\.dismiss) private var dismiss
     @State private var saver: Task<Void, Never>?
+    @State private var current: PlaybackRequest?
+    @State private var upNext: PlaybackRequest?
+    @State private var countdown = Self.upNextSeconds
+
+    private static let upNextSeconds = 10
 
     var body: some View {
-        SystemPlayerView(player: engine.player, title: request.title, subtitle: request.subtitle)
-            .ignoresSafeArea()
-            #if DEBUG
-            .overlay(alignment: .topLeading) { PlayerHUD(engine: engine) }
-            #endif
-            .overlay(alignment: .top) {
-                if let s = engine.status { Toast(text: s).padding(.top, 60) }
-            }
-            .onAppear {
-                engine.play(request)
-                saver = Task { @MainActor in
-                    while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 10_000_000_000)
-                        if engine.player.timeControlStatus == .playing { save() }
+        let playing = current ?? request
+        ZStack {
+            if let next = upNext {
+                UpNextCard(next: next, countdown: countdown, play: { playNext() }, cancel: { dismiss() })
+                    .onExitCommand { dismiss() }
+                    .task(id: next.url) {
+                        for s in stride(from: Self.upNextSeconds, through: 1, by: -1) {
+                            countdown = s
+                            try? await Task.sleep(nanoseconds: 1_000_000_000)
+                            if Task.isCancelled { return }
+                        }
+                        playNext()
                     }
+            } else {
+                SystemPlayerView(player: engine.player, title: playing.title, subtitle: playing.subtitle, menu: sleepMenu)
+                    .ignoresSafeArea()
+            }
+        }
+        #if DEBUG
+        .overlay(alignment: .topLeading) { PlayerHUD(engine: engine) }
+        #endif
+        .overlay(alignment: .top) {
+            if let s = engine.status, upNext == nil { Toast(text: s).padding(.top, 60) }
+        }
+        .onAppear {
+            current = request
+            engine.play(request)
+            saver = Task { @MainActor in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    if engine.player.timeControlStatus == .playing { save() }
                 }
             }
-            .onDisappear {
-                saver?.cancel()
-                save()
-                engine.stop()
+        }
+        .onDisappear {
+            saver?.cancel()
+            if upNext == nil { save() }
+            engine.stop()
+        }
+        .onChange(of: engine.sleepFired) { _, _ in dismiss() }
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { note in
+            guard (note.object as? AVPlayerItem) === engine.player.currentItem, upNext == nil else { return }
+            let finished = playing, d = engine.durationMs
+            Task {
+                try? await app.core.saveProgress(request: finished, positionMs: d, durationMs: d)
+                let next = app.core.settings.autoplayNextEpisode ? try? await app.core.nextEpisode(request: finished) : nil
+                if let next { upNext = next } else { dismiss() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { _ in
-                let d = engine.durationMs
-                Task { try? await app.core.saveProgress(request: request, positionMs: d, durationMs: d) }
-                dismiss()
-            }
+        }
+    }
+
+    private func playNext() {
+        guard let next = upNext else { return }
+        current = next
+        upNext = nil
+        engine.play(next)
+    }
+
+    private var sleepMenu: UIMenu {
+        let at = engine.sleepAt
+        let off = UIAction(title: "Off", state: at == nil ? .on : .off) { [engine] _ in engine.setSleepTimer(minutes: 0) }
+        let options = SleepTimer.minutes.map { m in
+            UIAction(title: "\(m) minutes") { [engine] _ in engine.setSleepTimer(minutes: m) }
+        }
+        return UIMenu(title: "Sleep timer: \(SleepTimer.label(at))", image: UIImage(systemName: "moon.zzz"), children: [off] + options)
     }
 
     private func save() {
         let pos = engine.positionMs, dur = engine.durationMs
-        let core = app.core, req = request
+        let core = app.core, req = current ?? request
         Task.detached { try? await core.saveProgress(request: req, positionMs: pos, durationMs: dur) }
+    }
+}
+
+/// Shown when an episode ends: the next one starts after a countdown unless cancelled.
+private struct UpNextCard: View {
+    let next: PlaybackRequest
+    let countdown: Int
+    let play: () -> Void
+    let cancel: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Color.black.ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Up next · playing in \(countdown) s").font(.callout).foregroundStyle(Palette.textDim)
+                Text(next.title).font(.title2.weight(.semibold)).lineLimit(2)
+                if let sub = next.subtitle { Text(sub).foregroundStyle(Palette.textDim) }
+                HStack(spacing: 30) {
+                    Button("Play now", action: play).focused($focused)
+                    Button("Cancel", action: cancel)
+                }
+                .padding(.top, 10)
+            }
+            .padding(40)
+            .frame(width: 760, alignment: .leading)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 24))
+            .padding(80)
+        }
+        .onAppear { focused = true }
     }
 }
 

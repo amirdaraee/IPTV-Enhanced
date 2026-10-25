@@ -34,6 +34,10 @@ struct SettingsView: View {
                     row("Refresh all playlists and guides now", nil) { sources.forEach { app.core.refresh(sourceId: $0.id) } }
                     header("Playback")
                     row("Info bar timeout", "\(st.overlayTimeoutSec) s") { update { $0.with(timeout: next([3, 4, 6, 10], $0.overlayTimeoutSec)) } }
+                    row("Start with last channel", st.autoplayLastChannel ? "On" : "Off") { update { $0.with(autoplayLast: !$0.autoplayLastChannel) } }
+                    row("Audio language", Languages.name(st.audioLanguage, empty: "Stream default")) { update { $0.with(audio: Languages.next($0.audioLanguage)) } }
+                    row("Subtitles", Languages.name(st.subtitleLanguage, empty: "Off")) { update { $0.with(subtitles: Languages.next($0.subtitleLanguage)) } }
+                    row("Play next episode automatically", st.autoplayNextEpisode ? "On" : "Off") { update { $0.with(autoplayNext: !$0.autoplayNextEpisode) } }
                     row("Prefer HLS for Xtream live", st.preferHlsLive ? "On (recommended on Apple TV)" : "Off") {
                         update { $0.with(hls: !$0.preferHlsLive) }
                     }
@@ -161,7 +165,8 @@ private struct SourceRow: View {
                     Text(source.type == .xtream ? "Xtream" : "M3U").font(.caption).foregroundStyle(Palette.textDim)
                     if !source.enabled { Text("Disabled").font(.caption).foregroundStyle(Palette.textDim) }
                 }
-                Text(status).font(.caption).foregroundStyle(source.lastError != nil && sync?.running != true ? Palette.warning : Palette.textDim).lineLimit(1)
+                Text(status).font(.caption)
+                    .foregroundStyle((source.lastError != nil || isExpiringSoon(source)) && sync?.running != true ? Palette.warning : Palette.textDim).lineLimit(1)
             }
             Spacer()
             Text("Options").foregroundStyle(Palette.textDim)
@@ -173,7 +178,8 @@ private struct SourceRow: View {
         if let e = source.lastError { return e }
         if let t = source.lastRefreshed?.int64Value {
             var s = "Updated " + RelativeDateTimeFormatter().localizedString(for: t.date, relativeTo: Date())
-            if let exp = source.expiresAt?.int64Value { s += " · account expires \(exp.date.formatted(date: .abbreviated, time: .omitted))" }
+            if isExpiringSoon(source), let text = expiryText(source) { s += " · account \(text)" }
+            else if let exp = source.expiresAt?.int64Value { s += " · account expires \(exp.date.formatted(date: .abbreviated, time: .omitted))" }
             return s
         }
         return "Never updated"
@@ -181,14 +187,18 @@ private struct SourceRow: View {
 }
 
 private extension TunerSettings {
-    func with(past: Int32? = nil, future: Int32? = nil, timeout: Int32? = nil, hls: Bool? = nil) -> TunerSettings {
+    func with(past: Int32? = nil, future: Int32? = nil, timeout: Int32? = nil, hls: Bool? = nil, autoplayLast: Bool? = nil,
+              audio: String? = nil, subtitles: String? = nil, autoplayNext: Bool? = nil) -> TunerSettings {
         TunerSettings(
             guidePastDays: past ?? guidePastDays,
             guideFutureDays: future ?? guideFutureDays,
             use24h: use24h,
             overlayTimeoutSec: timeout ?? overlayTimeoutSec,
-            autoplayLastChannel: autoplayLastChannel,
-            preferHlsLive: hls ?? preferHlsLive
+            autoplayLastChannel: autoplayLast ?? autoplayLastChannel,
+            preferHlsLive: hls ?? preferHlsLive,
+            audioLanguage: audio ?? audioLanguage,
+            subtitleLanguage: subtitles ?? subtitleLanguage,
+            autoplayNextEpisode: autoplayNext ?? autoplayNextEpisode
         )
     }
 }

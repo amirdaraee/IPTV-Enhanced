@@ -250,6 +250,9 @@ INSERT OR IGNORE INTO item_pref(source_id, kind, ckey) VALUES (?, ?, ?);
 setFavorite:
 UPDATE item_pref SET favorite = ?, favorite_at = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
 
+setFavoriteAt:
+UPDATE item_pref SET favorite_at = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
 setItemHidden:
 UPDATE item_pref SET hidden = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
 

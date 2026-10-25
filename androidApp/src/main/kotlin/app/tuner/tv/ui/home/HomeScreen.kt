@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -52,6 +53,8 @@ import androidx.tv.material3.Text
 import app.tuner.core.model.SyncState
 import app.tuner.tv.R
 import app.tuner.tv.core
+import app.tuner.tv.ui.components.expiryText
+import app.tuner.tv.ui.guide.Toast
 import app.tuner.tv.playerController
 import app.tuner.tv.ui.components.ConfirmDialog
 import app.tuner.tv.ui.components.FocusSurface
@@ -75,7 +78,12 @@ enum class Tab(val label: String, val icon: ImageVector) {
 object HomeState {
     var tab by mutableStateOf(Tab.Live)
     var searchQuery by mutableStateOf("")
+    /** The subscription-expiry reminder is shown once per launch. */
+    var expiryChecked = false
 }
+
+/** Accounts ending within this many days get a reminder at launch and a highlighted status in Settings. */
+const val EXPIRY_WARNING_DAYS = 7
 
 /** Left rail (expands when focused) + the selected tab. The guide is the default tab. */
 @Composable
@@ -91,9 +99,18 @@ fun HomeScreen(onExit: () -> Unit) {
         val w = core.watchSync { syncing = it.filter { s -> s.running } }
         onDispose { w.cancel() }
     }
+    var expiry by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         delay(100)
         runCatching { contentFocus.requestFocus() }
+    }
+    LaunchedEffect(Unit) {
+        if (HomeState.expiryChecked) return@LaunchedEffect
+        HomeState.expiryChecked = true
+        val soon = runCatching { core.expiringSources(EXPIRY_WARNING_DAYS) }.getOrDefault(emptyList())
+        expiry = soon.firstOrNull()?.let { s -> "Your subscription \"${s.name}\" ${expiryText(s)}" } ?: return@LaunchedEffect
+        delay(10_000)
+        expiry = null
     }
 
     // Back on the side menu goes home to Live TV first, then asks to exit.
@@ -173,6 +190,8 @@ fun HomeScreen(onExit: () -> Unit) {
             }
         }
     }
+
+    expiry?.let { Toast(it, Modifier.fillMaxSize().wrapContentSize(Alignment.BottomCenter)) }
 
     if (confirmExit) {
         ConfirmDialog("Exit IPTV Enhanced?", if (playerController.current != null) "Playback will stop." else "", "Exit", onConfirm = onExit, onDismiss = { confirmExit = false })

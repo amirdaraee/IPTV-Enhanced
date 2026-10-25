@@ -34,6 +34,8 @@ struct SystemPlayerView: UIViewControllerRepresentable {
     let player: AVPlayer
     let title: String
     let subtitle: String?
+    /// Extra menu in the player's transport bar (the sleep timer).
+    var menu: UIMenu?
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
@@ -59,5 +61,6 @@ struct SystemPlayerView: UIViewControllerRepresentable {
             items.append(s)
         }
         vc.player?.currentItem?.externalMetadata = items
+        vc.transportBarCustomMenuItems = menu.map { [$0] } ?? []
     }
 }

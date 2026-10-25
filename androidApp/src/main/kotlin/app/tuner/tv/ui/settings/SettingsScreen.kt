@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import app.tuner.core.Changes
+import app.tuner.core.TunerCore
 import app.tuner.core.model.Channel
 import app.tuner.core.model.ContentKind
 import app.tuner.core.model.Group
@@ -41,6 +42,10 @@ import app.tuner.tv.core
 import app.tuner.tv.ui.LocalNavigator
 import app.tuner.tv.ui.Screen
 import app.tuner.tv.ui.components.ConfirmDialog
+import app.tuner.tv.ui.components.expiryText
+import app.tuner.tv.ui.components.languageName
+import app.tuner.tv.ui.components.nextLanguage
+import app.tuner.tv.ui.home.EXPIRY_WARNING_DAYS
 import app.tuner.tv.ui.components.ContextMenu
 import app.tuner.tv.ui.components.Dim
 import app.tuner.tv.ui.components.FocusSurface
@@ -122,6 +127,21 @@ fun SettingsScreen(focusRequester: FocusRequester) {
         item {
             SettingRow("Start with last channel", if (settings.autoplayLastChannel) "On" else "Off") {
                 update { it.copy(autoplayLastChannel = !it.autoplayLastChannel) }
+            }
+        }
+        item {
+            SettingRow("Audio language", languageName(settings.audioLanguage, "Stream default")) {
+                update { it.copy(audioLanguage = nextLanguage(it.audioLanguage)) }
+            }
+        }
+        item {
+            SettingRow("Subtitles", languageName(settings.subtitleLanguage, "Off")) {
+                update { it.copy(subtitleLanguage = nextLanguage(it.subtitleLanguage)) }
+            }
+        }
+        item {
+            SettingRow("Play next episode automatically", if (settings.autoplayNextEpisode) "On" else "Off") {
+                update { it.copy(autoplayNextEpisode = !it.autoplayNextEpisode) }
             }
         }
         item {
@@ -225,16 +245,19 @@ private fun SourceRow(source: Source, sync: SyncState?, onClick: () -> Unit) {
                     Dim(if (source.type == SourceType.XTREAM) "Xtream" else "M3U")
                     if (!source.enabled) { Spacer(Modifier.width(10.dp)); Dim("Disabled") }
                 }
+                val expiring = source.expiresAt?.let { it - System.currentTimeMillis() < EXPIRY_WARNING_DAYS * TunerCore.DAY } == true
                 val status = when {
                     sync?.running == true -> "${sync.phase}…" + if (sync.count > 0) " ${"%,d".format(sync.count)}" else ""
                     source.lastError != null -> source.lastError!!
-                    source.lastRefreshed != null -> "Updated ${relative(source.lastRefreshed!!)}" +
-                        (source.expiresAt?.let { " · account expires ${java.text.DateFormat.getDateInstance().format(java.util.Date(it))}" } ?: "")
+                    source.lastRefreshed != null -> "Updated ${relative(source.lastRefreshed!!)}" + when {
+                        expiring -> " · account ${expiryText(source)}"
+                        else -> source.expiresAt?.let { " · account expires ${java.text.DateFormat.getDateInstance().format(java.util.Date(it))}" } ?: ""
+                    }
                     else -> "Never updated"
                 }
                 Text(
                     status, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (source.lastError != null && sync?.running != true) Palette.Warning else Palette.TextDim,
+                    color = if ((source.lastError != null || expiring) && sync?.running != true) Palette.Warning else Palette.TextDim,
                 )
             }
             Box { Dim("Options") }

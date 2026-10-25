@@ -149,6 +149,9 @@ final class GuideModel: ObservableObject {
         for c in channels where requested.contains(c.id) { requested.remove(c.id); ensureLoaded(c) }
     }
 
+    /// The guide's past limit, from the settings.
+    var minStart: Int64 { align(Fmt.nowMs() - Int64(app?.core.settings.guidePastDays ?? 2) * 24 * hour) }
+
     func segments(for channel: Channel) -> [GuideSegment] {
         guideSegments(programmes[channel.id], windowStart: windowStart)
     }
@@ -255,7 +258,11 @@ struct GuideView: View {
             if isActive { openGroups() }
         }
         .onReceive(ticker) { _ in now = Fmt.nowMs() }
-        .task { model.start(app: app) }
+        .onPlayPauseCommand { jumpToNow() }
+        .task {
+            model.start(app: app)
+            await startLastChannel()
+        }
         .task(id: message) {
             guard message != nil else { return }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -343,6 +350,17 @@ struct GuideView: View {
             Button("Restart this programme") { playCatchup(ch, p) }
         }
         Button("Play fullscreen") { watch(ch) }
+        Button("Earlier programmes") { showEarlier(ch.id) }
+        if model.windowStart != align(now) {
+            Button("Back to now") {
+                model.shiftWindow(by: align(Fmt.nowMs()) - model.windowStart)
+                refocus(ch.id, at: Fmt.nowMs())
+            }
+        }
+        if model.group?.type == .favorites {
+            Button("Move up") { Task { try? await app.core.moveFavorite(channel: ch, delta: -1) } }
+            Button("Move down") { Task { try? await app.core.moveFavorite(channel: ch, delta: 1) } }
+        }
         Button("Hide channel") { Task { try? await app.core.setHidden(kind: .live, sourceId: ch.sourceId, key: ch.key, hidden: true) } }
         if app.core.hasPin() {
             Button(ch.locked ? "Unlock channel" : "Lock channel") {
@@ -387,13 +405,28 @@ struct GuideView: View {
     }
 
     /// Scrolls back towards now; once the window shows now, Left goes to the channel name.
+    /// Left at the window's edge. From later programmes it scrolls back towards now, and while browsing
+    /// earlier programmes it keeps going back; at now it goes to the channel name.
     private func scrollLeft(_ chId: Int64) {
-        if model.windowStart > align(Fmt.nowMs()) {
+        let nowStart = align(Fmt.nowMs())
+        if model.windowStart > nowStart || (model.windowStart < nowStart && model.windowStart > model.minStart) {
             model.shiftWindow(by: -hour)
             refocus(chId, at: model.windowStart + hour - 1)
         } else {
             focusChannel(chId)
         }
+    }
+
+    /// Play/Pause: the grid back on the current time.
+    private func jumpToNow() {
+        model.shiftWindow(by: align(Fmt.nowMs()) - model.windowStart)
+        if case let .cell(chId, _) = focus { refocus(chId, at: Fmt.nowMs()) }
+    }
+
+    /// The two hours before the visible window, focused on its first programme in this row.
+    private func showEarlier(_ chId: Int64) {
+        model.shiftWindow(by: -2 * hour)
+        refocus(chId, at: model.windowStart)
     }
 
     private func focusChannel(_ chId: Int64) {
@@ -449,6 +482,17 @@ struct GuideView: View {
                 }
             }
         }
+    }
+
+    /// "Start with last channel": once per launch, open the last channel watched in fullscreen.
+    private func startLastChannel() async {
+        guard !app.startedLastChannel else { return }
+        app.startedLastChannel = true
+        guard app.core.settings.autoplayLastChannel, let ch = try? await app.core.lastChannel(),
+              app.core.isAllowed(locked: ch.locked), let req = try? await app.core.playChannel(channel: ch) else { return }
+        engine.play(req)
+        LiveLineup.start([ch], current: ch)
+        fullscreen = true
     }
 
     /// Plays the channel live in fullscreen, keeping the stream if it is already in the preview.
@@ -597,6 +641,8 @@ private struct GuideHeader: View {
                     if let ch = model.focusedChannel {
                         Text(verbatim: "·  \(ch.number == nil ? "" : Fmt.number(ch.number) + "  ")\(ch.name)").foregroundStyle(Palette.textDim).lineLimit(1)
                     }
+                    Spacer(minLength: 20)
+                    ClockText().foregroundStyle(Palette.text)
                 }
                 .font(.callout.weight(.medium))
                 Text(model.focusedProgramme?.title ?? model.focusedChannel?.name ?? "")

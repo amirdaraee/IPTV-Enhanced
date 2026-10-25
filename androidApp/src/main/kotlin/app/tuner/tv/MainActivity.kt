@@ -70,6 +70,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            // The sleep timer stopped playback: leave the player for the guide.
+            LaunchedEffect(Unit) {
+                snapshotFlow { playerController.sleepFired }.collect {
+                    while (nav.current == Screen.LivePlayer || nav.current == Screen.VodPlayer) nav.pop()
+                }
+            }
             LaunchedEffect(nav) {
                 snapshotFlow { nav.current }.collect { screen ->
                     val playing = screen == Screen.LivePlayer || screen == Screen.VodPlayer

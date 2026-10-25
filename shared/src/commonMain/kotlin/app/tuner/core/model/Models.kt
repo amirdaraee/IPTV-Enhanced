@@ -237,4 +237,10 @@ data class Settings(
     val overlayTimeoutSec: Int = 4,
     val autoplayLastChannel: Boolean = false,
     val preferHlsLive: Boolean = false,
+    /** Preferred audio language (ISO 639-1, e.g. "fa"); empty = the stream's default. */
+    val audioLanguage: String = "",
+    /** Subtitle language to show automatically (ISO 639-1); empty = subtitles off. */
+    val subtitleLanguage: String = "",
+    /** Play the next episode after a short countdown when one ends. */
+    val autoplayNextEpisode: Boolean = true,
 )

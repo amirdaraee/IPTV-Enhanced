@@ -23,14 +23,17 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 - Per-source time shift, and configurable past and future retention.
 
 **Live TV**
-- A grid guide is the home screen, with a live preview.
-- Groups, Favorites, Recents and All channels; hide or reorder groups, hide channels.
+- A grid guide is the home screen, with a live preview and a clock. The group list is always shown beside it; OK on a channel name plays it fullscreen.
+- Play/Pause puts the guide back on the current time; "Earlier programmes" (or Rewind) goes back for catch-up.
+- Groups, Favorites, Recents and All channels; hide or reorder groups, hide channels, and reorder Favorites.
+- Optionally starts on the last channel you watched.
 - "Add all to Favorites" for a whole search result (for example `uk news`) or a whole group; divider entries such as `##### SPORTS #####` are skipped.
 - Fullscreen player with:
   - an info bar showing now/next;
   - a channel-list overlay;
   - up/down zapping;
   - number-key entry (Android) and last-channel recall;
+  - a clock and a sleep timer (15 minutes to 2 hours);
   - auto-reconnect.
 
 **Catch-up**
@@ -40,9 +43,13 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 **Movies and Series**
 - Category grids, details, seasons and episodes.
 - Resume and Continue watching, plus favorites.
+- The next episode starts after a 10-second "Up next" countdown (can be turned off).
+- Sleep timer: in the player's menu bar on Apple TV, and on the Menu key on Android.
 
 **Everything else**
-- Unified search across channels, movies, series and programmes on air in the next 24 hours.
+- Unified search across channels, movies, series and programmes on air in the next 24 hours, with your recent searches one press away.
+- Preferred audio and subtitle language, applied to every stream.
+- A reminder at launch, and a highlighted status in Settings, when an Xtream subscription ends within 7 days.
 - Parental PIN: lock channels or groups (with a brute-force lockout), and protect settings.
 - Back behaves predictably everywhere: it closes the innermost thing first (keyboard, overlay, programme → channel name → group list, category list), returns to Live TV from other tabs, and only then asks to exit. Forms ask before discarding typing.
 

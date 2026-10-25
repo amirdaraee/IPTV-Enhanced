@@ -56,8 +56,10 @@ final class TunerUITests: XCTestCase {
         press(.menu, wait: 1)
         press(.menu, wait: 2)
         shot("back-to-guide")
-        press(.right, 2)
+        press(.right, 4)
         shot("guide-moved-right")
+        press(.playPause, wait: 1.5)
+        shot("jumped-to-now")
         press(.menu, wait: 1.5)
         shot("back-to-channel-name")
         press(.menu, wait: 1.5)
@@ -71,7 +73,7 @@ final class TunerUITests: XCTestCase {
         app.launchArguments = ["-demoXtream", "http://localhost:8900"]
         app.launch()
         Thread.sleep(forTimeInterval: 6)
-        press(.up, wait: 1)
+        press(.menu, wait: 1)  // group list → tab bar
         press(.right, wait: 1.5)
         shot("movies-tab")
         press(.down, wait: 1)
@@ -125,7 +127,7 @@ final class TunerUITests: XCTestCase {
         app.launchArguments = ["-demoXtream", "http://localhost:8900"]
         app.launch()
         Thread.sleep(forTimeInterval: 6)
-        press(.up, wait: 1)
+        press(.menu, wait: 1)  // group list → tab bar
         press(.right, 2, wait: 1.5)
         shot("series-tab")
         press(.down, wait: 1)
@@ -141,7 +143,7 @@ final class TunerUITests: XCTestCase {
         app.launchArguments = ["-demoXtream", "http://localhost:8900"]
         app.launch()
         Thread.sleep(forTimeInterval: 6)
-        press(.up, wait: 1)
+        press(.menu, wait: 1)  // group list → tab bar
         press(.right, 3, wait: 1.5)
         press(.down, wait: 1.5)
         shot("search-focused")
@@ -151,6 +153,17 @@ final class TunerUITests: XCTestCase {
         press(.down, 4, wait: 0.6)
         Thread.sleep(forTimeInterval: 1.5)
         shot("search-results")
+        // Opening a result remembers the search; it is offered again on the next visit.
+        press(.select, wait: 4)
+        shot("search-opened")
+        press(.menu, 2, wait: 1.5)
+        app.terminate()
+        app.launch()
+        Thread.sleep(forTimeInterval: 6)
+        press(.menu, wait: 1)  // group list → tab bar
+        press(.right, 3, wait: 1.5)
+        press(.down, wait: 1.5)
+        shot("recent-searches")
     }
 
     func testOnboardingForm() {
@@ -186,7 +199,7 @@ final class TunerUITests: XCTestCase {
         app.launchArguments = ["-demoXtream", "http://localhost:8900"]
         app.launch()
         Thread.sleep(forTimeInterval: 6)
-        press(.up, wait: 1)
+        press(.menu, wait: 1)  // group list → tab bar
         press(.right, 4, wait: 1.5)
         press(.down, wait: 1.5)
         shot("settings")
@@ -211,7 +224,7 @@ final class TunerUITests: XCTestCase {
         wait(for: [done], timeout: 900)
         Thread.sleep(forTimeInterval: 3)
         shot("after-launch")
-        press(.up, wait: 1)
+        press(.menu, wait: 1)  // group list → tab bar
         press(.right, 3, wait: 1.5)
         press(.down, wait: 1.5)
         type("news")

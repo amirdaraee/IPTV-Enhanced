@@ -70,12 +70,15 @@ import app.tuner.tv.playerController
 import app.tuner.tv.ui.LocalNavigator
 import app.tuner.tv.ui.components.Artwork
 import app.tuner.tv.ui.components.Badge
+import app.tuner.tv.ui.components.Clock
 import app.tuner.tv.ui.components.ContextMenu
 import app.tuner.tv.ui.components.Dim
 import app.tuner.tv.ui.components.FocusSurface
 import app.tuner.tv.ui.components.MenuAction
 import app.tuner.tv.ui.components.PinDialog
 import app.tuner.tv.ui.components.ProgressBar
+import app.tuner.tv.ui.components.sleepActions
+import app.tuner.tv.ui.components.sleepLabel
 import app.tuner.tv.ui.guide.Toast
 import app.tuner.tv.ui.theme.Palette
 import app.tuner.tv.util.formatRange
@@ -108,6 +111,7 @@ fun LivePlayerScreen() {
     var showList by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var trackMenu by remember { mutableStateOf<Int?>(null) }
+    var sleepMenu by remember { mutableStateOf(false) }
     var numberEntry by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var pinFor by remember { mutableStateOf<Channel?>(null) }
@@ -316,6 +320,7 @@ fun LivePlayerScreen() {
             add(MenuAction("Audio track", playerController.audioTracks().firstOrNull { it.selected }?.label) { trackMenu = C.TRACK_TYPE_AUDIO })
             add(MenuAction("Subtitles", playerController.subtitleTracks().firstOrNull { it.selected }?.label ?: "Off") { trackMenu = C.TRACK_TYPE_TEXT })
             add(MenuAction("Picture", RESIZE_MODES[resizeIndex].second) { resizeIndex = (resizeIndex + 1) % RESIZE_MODES.size })
+            add(MenuAction("Sleep timer", sleepLabel()) { sleepMenu = true })
             add(MenuAction("Previous channel") { scope.launch { core.previousChannel()?.let { tune(it) } } })
             if (ch != null && isCatchup) add(MenuAction("Back to live") { tune(ch) })
         }
@@ -333,6 +338,12 @@ fun LivePlayerScreen() {
         }
         ContextMenu(if (type == C.TRACK_TYPE_AUDIO) "Audio" else "Subtitles", null, actions) {
             trackMenu = null
+            scope.launch { delay(50); runCatching { rootFocus.requestFocus() } }
+        }
+    }
+    if (sleepMenu) {
+        ContextMenu("Sleep timer", "Stops playback after", sleepActions()) {
+            sleepMenu = false
             scope.launch { delay(50); runCatching { rootFocus.requestFocus() } }
         }
     }
@@ -363,6 +374,8 @@ private fun InfoBar(channel: Channel, nowNext: List<Programme>, isCatchup: Boole
                     Spacer(Modifier.width(12.dp))
                     if (isCatchup) Badge("CATCH-UP") else Badge("LIVE", Palette.Live.copy(alpha = 0.25f), Palette.Live)
                     if (channel.favorite) Text("  ★", color = Palette.Warning)
+                    Spacer(Modifier.weight(1f))
+                    Clock(style = MaterialTheme.typography.titleLarge)
                 }
                 Spacer(Modifier.height(6.dp))
                 if (isCatchup && request != null) {

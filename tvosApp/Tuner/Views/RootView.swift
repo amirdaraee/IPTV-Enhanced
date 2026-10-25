@@ -6,6 +6,7 @@ enum HomeTab: Hashable { case live, movies, series, search, settings }
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @State private var tab: HomeTab = .live
+    @State private var expiry: String?
     #if DEBUG
     /// UI tests pass `-debugPlay <url>` to open the system player on a URL directly.
     @State private var debugRequest: PlaybackRequest? = {
@@ -33,6 +34,16 @@ struct RootView: View {
                     SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }.tag(HomeTab.settings)
                 }
                 .overlay(alignment: .topTrailing) { SyncBadge() }
+                .overlay(alignment: .bottom) { if let expiry { Toast(text: expiry).padding(.bottom, 50) } }
+                .task {
+                    // Once per launch: remind about a subscription that is about to end.
+                    guard !model.checkedExpiry else { return }
+                    model.checkedExpiry = true
+                    guard let s = (try? await model.core.expiringSources(days: expiryWarningDays))?.first, let text = expiryText(s) else { return }
+                    expiry = "Your subscription \"\(s.name)\" \(text)"
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                    expiry = nil
+                }
             }
         }
         #if DEBUG

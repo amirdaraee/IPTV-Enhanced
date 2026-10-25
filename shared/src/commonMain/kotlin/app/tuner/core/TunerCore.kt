@@ -212,6 +212,9 @@ class TunerCore internal constructor(
             q.putSetting("overlay_timeout", newSettings.overlayTimeoutSec.toString())
             q.putSetting("autoplay_last", newSettings.autoplayLastChannel.toString())
             q.putSetting("prefer_hls", newSettings.preferHlsLive.toString())
+            q.putSetting("audio_lang", newSettings.audioLanguage)
+            q.putSetting("subtitle_lang", newSettings.subtitleLanguage)
+            q.putSetting("autoplay_next", newSettings.autoplayNextEpisode.toString())
         }
         changed(Changes.SETTINGS)
     }
@@ -227,6 +230,9 @@ class TunerCore internal constructor(
             overlayTimeoutSec = get("overlay_timeout")?.toIntOrNull() ?: d.overlayTimeoutSec,
             autoplayLastChannel = get("autoplay_last")?.toBooleanStrictOrNull() ?: d.autoplayLastChannel,
             preferHlsLive = get("prefer_hls")?.toBooleanStrictOrNull() ?: d.preferHlsLive,
+            audioLanguage = get("audio_lang") ?: d.audioLanguage,
+            subtitleLanguage = get("subtitle_lang") ?: d.subtitleLanguage,
+            autoplayNextEpisode = get("autoplay_next")?.toBooleanStrictOrNull() ?: d.autoplayNextEpisode,
         )
     }
 
@@ -247,6 +253,13 @@ class TunerCore internal constructor(
 
     @Throws(Exception::class)
     suspend fun hasSources(): Boolean = sources().isNotEmpty()
+
+    /** Enabled accounts whose subscription ends within [days] days (or has already ended). */
+    @Throws(Exception::class)
+    suspend fun expiringSources(days: Int): List<Source> {
+        val limit = nowMillis() + days * DAY
+        return sources().filter { s -> s.enabled && s.expiresAt.let { it != null && it < limit } }
+    }
 
     /** Checks Xtream credentials without saving anything. */
     @Throws(Exception::class)
@@ -513,6 +526,28 @@ class TunerCore internal constructor(
         return targets.size
     }
 
+    /**
+     * Moves a favorite channel up (negative [delta]) or down in the Favorites list.
+     * Favorites are ordered by the time they were added, so the list is renumbered in its new order.
+     */
+    @Throws(Exception::class)
+    suspend fun moveFavorite(channel: Channel, delta: Int) {
+        io {
+            val q = db.catalogQueries
+            val list = q.favoriteChannels(::mapChannel).executeAsList().toMutableList()
+            val from = list.indexOfFirst { it.id == channel.id }
+            if (from < 0) return@io
+            val to = (from + delta).coerceIn(0, list.lastIndex)
+            if (to == from) return@io
+            list.add(to, list.removeAt(from))
+            // Small numbers keep the reordered list ahead of anything favorited later (stamped with the time).
+            db.transaction {
+                list.forEachIndexed { i, ch -> q.setFavoriteAt(i.toLong(), ch.sourceId, ContentKind.LIVE.name, ch.key) }
+            }
+        }
+        changed(Changes.PREFS)
+    }
+
     @Throws(Exception::class)
     suspend fun setHidden(kind: ContentKind, sourceId: Long, key: String, hidden: Boolean) = itemPref(kind, sourceId, key) {
         db.catalogQueries.setItemHidden(hidden.toLong(), sourceId, kind.name, key)
@@ -598,6 +633,20 @@ class TunerCore internal constructor(
             series, info.plot ?: series.plot, info.cast, info.genre ?: series.genre, info.backdrop,
             episodes.map { it.season }.distinct().sorted(), episodes,
         )
+    }
+
+    /** The episode after the one [request] plays, ready to play; null at the end of the series or for other content. */
+    @Throws(Exception::class)
+    suspend fun nextEpisode(request: PlaybackRequest): PlaybackRequest? {
+        if (request.kind != ContentKind.SERIES) return null
+        val parts = request.progressParentKey?.split(':', limit = 3) ?: return null
+        val sourceId = parts.getOrNull(1)?.toLongOrNull() ?: return null
+        val key = parts.getOrNull(2) ?: return null
+        val series = io { db.catalogQueries.seriesByKey(sourceId, key, ::mapSeries).executeAsOneOrNull() } ?: return null
+        val episodes = seriesDetails(series).episodes.sortedWith(compareBy({ it.season }, { it.episode }))
+        val index = episodes.indexOfFirst { episodeKey(series.sourceId, it.remoteId) == request.progressKey }
+        val next = episodes.getOrNull(index + 1)?.takeIf { index >= 0 } ?: return null
+        return playEpisode(series, next)
     }
 
     @Throws(Exception::class)
@@ -765,6 +814,24 @@ class TunerCore internal constructor(
         }
     }
 
+    /** Searches the user opened a result from, newest first. */
+    fun recentSearches(): List<String> =
+        db.userQueries.getSetting(RECENT_SEARCHES).executeAsOneOrNull()?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
+
+    /** Remembers [query] at the top of [recentSearches] (case-insensitive, at most [MAX_RECENT_SEARCHES]). */
+    fun rememberSearch(query: String) {
+        val q = query.trim().replace('\n', ' ')
+        if (q.length < 2) return
+        val list = (listOf(q) + recentSearches().filter { !it.equals(q, ignoreCase = true) }).take(MAX_RECENT_SEARCHES)
+        db.userQueries.putSetting(RECENT_SEARCHES, list.joinToString("\n"))
+        changed(Changes.SETTINGS)
+    }
+
+    fun clearRecentSearches() {
+        db.userQueries.removeSetting(RECENT_SEARCHES)
+        changed(Changes.SETTINGS)
+    }
+
     // ------------------------------------------------------------------ parental PIN
 
     fun hasPin(): Boolean = db.userQueries.getSetting(PIN_HASH).executeAsOneOrNull() != null
@@ -848,5 +915,7 @@ class TunerCore internal constructor(
         internal const val PIN_FAILURES = "pin_failures"
         internal const val PIN_LOCKED_UNTIL = "pin_locked_until"
         private const val MAX_PIN_ATTEMPTS = 5
+        private const val RECENT_SEARCHES = "recent_searches"
+        private const val MAX_RECENT_SEARCHES = 8
     }
 }

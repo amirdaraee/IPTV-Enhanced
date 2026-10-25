@@ -149,6 +149,21 @@ class GuideViewModel : ViewModel() {
         }
     }
 
+    /** Puts the grid back on the current time. */
+    fun jumpToNow() {
+        val now = System.currentTimeMillis()
+        windowStart = align(now)
+        if (!onChannel) focusTime = now
+    }
+
+    /** Shows the two hours before the visible window (down to the guide's past limit) and focuses its first programme. */
+    fun showEarlier() {
+        val min = align(System.currentTimeMillis() - core.settings.guidePastDays * 24 * HOUR)
+        windowStart = maxOf(windowStart - 2 * HOUR, min)
+        focusTime = windowStart
+        onChannel = false
+    }
+
     fun focusedChannel(): Channel? = channels.getOrNull(row)
 
     fun focusedProgramme(): Programme? {

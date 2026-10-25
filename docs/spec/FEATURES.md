@@ -41,9 +41,12 @@ Legend: **P0** = v1.0 (this build), **P1** = v1.x, **P2** = later. Platform: A =
 | LIVE-9 | Hide and reorder groups; hide channels | P0 |
 | LIVE-10 | Channel numbers (`tvg-chno`, else sequential); A: number-key entry | P0 |
 | LIVE-11 | Catch-up from the guide (Xtream `tv_archive`, M3U `catchup*` schemes) | P0 |
-| LIVE-12 | Auto-start the last channel on launch (option) | P1 |
+| LIVE-12 | Auto-start the last channel on launch (option) | P0 |
 | LIVE-13 | Rename and reorder channels | P1 |
 | LIVE-14 | Multiview, PiP | P2 |
+| LIVE-15 | Clock in the guide and player; Play/Pause jumps the guide to now; "Earlier programmes" for catch-up browsing | P0 |
+| LIVE-16 | Reorder Favorites (move up/down) | P0 |
+| LIVE-17 | Sleep timer in the players (15 min – 2 h) | P0 |
 
 ## 4. Movies & Series (VOD)
 | ID | Feature | Pri |
@@ -55,6 +58,7 @@ Legend: **P0** = v1.0 (this build), **P1** = v1.x, **P2** = later. Platform: A =
 | VOD-5 | Favorites for movies and series | P0 |
 | VOD-6 | Seek bar with ±10 s / ±30 s skip; next episode | P0 |
 | VOD-7 | TMDb enrichment with a user-supplied key | P2 |
+| VOD-8 | "Up next" countdown that plays the next episode (option) | P0 |
 
 ## 5. Player
 | ID | Feature | Pri |
@@ -67,11 +71,13 @@ Legend: **P0** = v1.0 (this build), **P1** = v1.x, **P2** = later. Platform: A =
 | PLY-6 | Fallback engine for formats AVPlayer can't handle (T: raw MPEG-TS, MKV) via an additional playback engine | P1 |
 | PLY-7 | Buffer size and audio-delay settings; frame-rate matching | P1 |
 | PLY-8 | External player hand-off | P1 |
+| PLY-9 | Preferred audio and subtitle language | P0 |
 
 ## 6. Search
 | ID | Feature | Pri |
 |----|---------|-----|
 | SRCH-1 | Unified search across channels, movies, series and EPG programme titles | P0 |
+| SRCH-2 | Recent searches (kept when a result is opened) | P0 |
 
 ## 7. Personalisation, safety and data
 | ID | Feature | Pri |
@@ -84,6 +90,7 @@ Legend: **P0** = v1.0 (this build), **P1** = v1.x, **P2** = later. Platform: A =
 | SET-6 | Themes and accent colour | P2 |
 | SET-7 | All data stays on the device; no analytics, no accounts | P0 |
 | SET-8 | Exit confirmation on Back from the home screen (A) | P0 |
+| SET-9 | Subscription-expiry reminder (Xtream, 7 days ahead) | P0 |
 
 ## 8. Remote-control grammar (stable, documented, never changed silently)
 | Context | OK | Long-press OK | Back | Up/Down | Left/Right |

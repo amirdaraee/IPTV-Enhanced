@@ -9,6 +9,7 @@ struct SearchView: View {
     @State private var results: SearchResults?
     @State private var fullscreen = false
     @State private var message: String?
+    @State private var recent: [String] = []
 
     var body: some View {
         NavigationStack {
@@ -65,16 +66,28 @@ struct SearchView: View {
                             }
                         }
                     } else {
+                        if query.isEmpty && !recent.isEmpty {
+                            section("Recent searches") {
+                                ForEach(recent, id: \.self) { q in
+                                    Button(q) { query = q }
+                                }
+                                Button("Clear") {
+                                    app.core.clearRecentSearches()
+                                    recent = []
+                                }
+                            }
+                        }
                         Text("Search finds channels, movies, series and programmes on air in the next 24 hours.")
                             .foregroundStyle(Palette.textDim)
                     }
                 }
                 .padding(60)
             }
-            .navigationDestination(for: Movie.self) { MovieDetailView(movie: $0) }
-            .navigationDestination(for: Series.self) { SeriesDetailView(series: $0) }
+            .navigationDestination(for: Movie.self) { MovieDetailView(movie: $0).onAppear(perform: saveQuery) }
+            .navigationDestination(for: Series.self) { SeriesDetailView(series: $0).onAppear(perform: saveQuery) }
         }
         .searchable(text: $query, prompt: "Channels, programmes, movies, series")
+        .onAppear { recent = app.core.recentSearches() }
         .task(id: query) {
             try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
@@ -106,7 +119,14 @@ struct SearchView: View {
         }
     }
 
+    /// A result was opened: keep the query for next time.
+    private func saveQuery() {
+        app.core.rememberSearch(query: query)
+        recent = app.core.recentSearches()
+    }
+
     private func play(_ ch: Channel, lineup: [Channel]) {
+        saveQuery()
         gate.run(app.core, locked: ch.locked, title: ch.name) {
             Task {
                 guard let req = try? await app.core.playChannel(channel: ch) else { return }

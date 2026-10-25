@@ -68,6 +68,7 @@ import app.tuner.tv.ui.LocalNavigator
 import app.tuner.tv.ui.Screen
 import app.tuner.tv.ui.components.Artwork
 import app.tuner.tv.ui.components.Badge
+import app.tuner.tv.ui.components.Clock
 import app.tuner.tv.ui.components.ContextMenu
 import app.tuner.tv.ui.components.Dim
 import app.tuner.tv.ui.components.EmptyState
@@ -91,6 +92,9 @@ private val ROW_HEIGHT = 56.dp
 private val OnAccent = Color(0xFF00201C)
 private val CHANNEL_WIDTH = 210.dp
 private const val VIEWPORT_MINUTES = 150
+
+/** Whether the launch-time focus retry has run (once per process). */
+private var startFocused = false
 
 /** Pending action that needs the parental PIN first. */
 private class Gate(val title: String, val action: () -> Unit)
@@ -125,9 +129,11 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
         vm.focusTime = System.currentTimeMillis()
     }
     LaunchedEffect(gridFocused) { if (gridFocused) enterGrid = false }
-    // The group list loads after the home screen first asks for focus; retry once it is there.
+    // At app start the group list loads after the home screen first asks for focus; retry once it
+    // is there. Only then: passing over Live TV in the side menu must not pull focus into the guide.
     LaunchedEffect(vm.groups.isNotEmpty()) {
-        if (vm.groups.isEmpty() || gridFocused || groupsFocused) return@LaunchedEffect
+        if (startFocused || vm.groups.isEmpty() || gridFocused || groupsFocused) return@LaunchedEffect
+        startFocused = true
         delay(50)
         runCatching { focusRequester.requestFocus() }
     }
@@ -264,6 +270,12 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
                 }
             })
             add(MenuAction("Play fullscreen") { watch(ch) })
+            add(MenuAction("Earlier programmes", "Rewind") { vm.showEarlier(); runCatching { gridFocus.requestFocus() } })
+            if (vm.windowStart != GuideViewModel.align(t)) add(MenuAction("Back to now", "Play/Pause") { vm.jumpToNow(); runCatching { gridFocus.requestFocus() } })
+            if (vm.group?.type == GroupType.FAVORITES) {
+                add(MenuAction("Move up") { scope.launch { core.moveFavorite(ch, -1) } })
+                add(MenuAction("Move down") { scope.launch { core.moveFavorite(ch, 1) } })
+            }
             add(MenuAction("Hide channel") { scope.launch { core.setHidden(ContentKind.LIVE, ch.sourceId, ch.key, true) } })
             if (core.hasPin()) add(MenuAction(if (ch.locked) "Unlock channel" else "Lock channel") {
                 guarded(true, "Change lock") { scope.launch { core.setLocked(ContentKind.LIVE, ch.sourceId, ch.key, !ch.locked) } }
@@ -375,7 +387,9 @@ private fun GuideGrid(
         snapshotFlow { listState.firstVisibleItemIndex to listState.layoutInfo.visibleItemsInfo.size }
             .collect { (first, count) -> vm.ensureLoaded((first - 10).coerceAtLeast(0)..(first + count + 20)) }
     }
-    LaunchedEffect(vm.row) {
+    // Also on a new lineup: the list keeps its scroll position by channel, so a channel shared
+    // with the previous group would otherwise leave the focused row off screen.
+    LaunchedEffect(vm.row, vm.lineupVersion) {
         val info = listState.layoutInfo
         val visible = info.visibleItemsInfo
         if (visible.isEmpty()) return@LaunchedEffect
@@ -405,8 +419,10 @@ private fun GuideGrid(
             val visibleEnd = (next?.start ?: target) + 20 * MINUTE
             if (visibleEnd > vm.windowStart + viewportMs) vm.windowStart = align(next?.start ?: target)
         } else {
-            // Left of the programme on now is the channel name; earlier ones are reached with Rewind.
-            if ((p?.start ?: vm.focusTime) <= now) { toChannel(); return }
+            // Left of the programme on now is the channel name. Earlier programmes are reached with
+            // Rewind or "Earlier programmes", and from there Left keeps going back.
+            val onNow = p?.isLive(now) ?: (align(vm.focusTime) == align(now))
+            if (onNow) { toChannel(); return }
             val target = (p?.start ?: align(vm.focusTime - 1)) - 1
             if (target < minTime) { toChannel(); return }
             val prev = list.lastOrNull { it.start <= target && it.stop > target }
@@ -457,9 +473,8 @@ private fun GuideGrid(
                     Key.PageUp, Key.ChannelUp -> { vm.row = (vm.row - 8).coerceAtLeast(0); true }
                     Key.Menu -> { vm.focusedChannel()?.let { onMenu(it, current()) }; true }
                     Key.MediaFastForward -> { vm.windowStart += 2 * HOUR; vm.focusTime = vm.windowStart; vm.onChannel = false; true }
-                    Key.MediaRewind -> {
-                        vm.windowStart = maxOf(vm.windowStart - 2 * HOUR, align(minTime)); vm.focusTime = vm.windowStart; vm.onChannel = false; true
-                    }
+                    Key.MediaRewind -> { vm.showEarlier(); true }
+                    Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> { vm.jumpToNow(); true }
                     else -> false
                 }
             }
@@ -661,7 +676,10 @@ private fun GroupsPanel(
             },
     ) {
         Column(Modifier.padding(top = 24.dp)) {
-            Text("Groups", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 24.dp, bottom = 12.dp))
+            Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 20.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Groups", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Clock(style = MaterialTheme.typography.titleMedium, color = Palette.TextDim)
+            }
             LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(horizontal = 16.dp)) {
                 itemsIndexed(vm.groups, key = { _, g -> g.id }) { i, g ->
                     val selected = g.id == vm.group?.id

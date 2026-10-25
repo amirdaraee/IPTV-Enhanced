@@ -9,6 +9,9 @@ final class AppModel: ObservableObject {
 
     @Published var hasSources: Bool?
     @Published var syncStates: [SyncState] = []
+    /// Launch-time actions (start the last channel, the expiry reminder) run once per launch.
+    var startedLastChannel = false
+    var checkedExpiry = false
 
     private var subscriptions: [Subscription] = []
 
@@ -16,6 +19,10 @@ final class AppModel: ObservableObject {
         core = Tuner(context: PlatformContext(backup: KeychainBackup()))
         // AVPlayer can't play raw MPEG-TS, so Xtream live channels use HLS on tvOS.
         core.setPlatformDefaults(preferHlsLive: true)
+        subscriptions.append(watch(Changes.settings) { [weak self] _ in
+            guard let self else { return }
+            self.player.setLanguages(audio: self.core.settings.audioLanguage, subtitles: self.core.settings.subtitleLanguage)
+        })
         subscriptions.append(core.watchSync { [weak self] states in
             #if DEBUG
             // Phase transitions with timestamps in the device log, for timing syncs.

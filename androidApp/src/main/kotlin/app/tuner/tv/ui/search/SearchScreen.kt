@@ -58,6 +58,13 @@ fun SearchScreen(focusRequester: FocusRequester) {
     var query by app.tuner.tv.ui.home.HomeState::searchQuery
     var results by remember { mutableStateOf<SearchResults?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+    var recent by remember { mutableStateOf(core.recentSearches()) }
+
+    /** A result was opened: keep the query for next time. */
+    fun saveQuery() {
+        core.rememberSearch(query)
+        recent = core.recentSearches()
+    }
 
     LaunchedEffect(query) {
         delay(300)
@@ -66,6 +73,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
     LaunchedEffect(message) { if (message != null) { delay(3000); message = null } }
 
     fun playChannel(ch: Channel, lineup: List<Channel>) {
+        saveQuery()
         scope.launch {
             try {
                 val req = core.playChannel(ch)
@@ -92,6 +100,22 @@ fun SearchScreen(focusRequester: FocusRequester) {
         Spacer(Modifier.height(20.dp))
         val r = results
         when {
+            r == null && query.isBlank() && recent.isNotEmpty() -> {
+                SectionTitle("Recent searches")
+                Spacer(Modifier.height(10.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
+                    items(recent) { q ->
+                        FocusSurface(onClick = { query = q }) {
+                            Text(q, style = MaterialTheme.typography.titleSmall, maxLines = 1, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                        }
+                    }
+                    item(key = "clear") {
+                        FocusSurface(onClick = { core.clearRecentSearches(); recent = emptyList() }) {
+                            Dim("Clear", Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                        }
+                    }
+                }
+            }
             r == null -> Dim("Tip: search finds programmes on air in the next 24 hours too.")
             r.isEmpty -> EmptyState("No results", "Nothing matches \"$query\".")
             else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(20.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 40.dp)) {
@@ -148,7 +172,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
                         items(r.movies, key = { it.id }) { m ->
                             Column(Modifier.width(120.dp)) {
-                                FocusSurface(onClick = { nav.push(Screen.MovieDetail(m.id)) }, modifier = Modifier.width(120.dp).height(180.dp), scale = 1.08f) {
+                                FocusSurface(onClick = { saveQuery(); nav.push(Screen.MovieDetail(m.id)) }, modifier = Modifier.width(120.dp).height(180.dp), scale = 1.08f) {
                                     Artwork(m.poster, m.name, Modifier.fillMaxSize())
                                 }
                                 Spacer(Modifier.height(6.dp))
@@ -163,7 +187,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = RowBleed, contentPadding = RowPadding) {
                         items(r.series, key = { it.id }) { s ->
                             Column(Modifier.width(120.dp)) {
-                                FocusSurface(onClick = { nav.push(Screen.SeriesDetail(s.id)) }, modifier = Modifier.width(120.dp).height(180.dp), scale = 1.08f) {
+                                FocusSurface(onClick = { saveQuery(); nav.push(Screen.SeriesDetail(s.id)) }, modifier = Modifier.width(120.dp).height(180.dp), scale = 1.08f) {
                                     Artwork(s.cover, s.name, Modifier.fillMaxSize())
                                 }
                                 Spacer(Modifier.height(6.dp))

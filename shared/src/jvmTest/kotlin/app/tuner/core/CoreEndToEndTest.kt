@@ -264,6 +264,49 @@ class CoreEndToEndTest {
     }
 
     @Test
+    fun conveniences() = runBlocking {
+        val core = core()
+        val id = core.addSource(SourceInput("Demo", SourceType.XTREAM, "demo.test:8080", "u", "p w"))
+        assertNull(core.refreshNow(id))
+        while (core.sourcesSyncing()) Thread.sleep(20)
+
+        // Favorites can be reordered; a channel favorited afterwards goes to the end.
+        val all = core.channels(core.liveGroups(false).first { it.type == GroupType.ALL }, false)
+        val (news, sports) = all.partition { it.name.startsWith("News") }.let { it.first.single() to it.second.single() }
+        core.setFavorite(ContentKind.LIVE, id, news.key, true)
+        core.setFavorite(ContentKind.LIVE, id, sports.key, true)
+        val favGroup = core.liveGroups(false).first { it.type == GroupType.FAVORITES }
+        assertEquals(listOf(news.id, sports.id), core.channels(favGroup, false).map { it.id })
+        core.moveFavorite(sports, -1)
+        assertEquals(listOf(sports.id, news.id), core.channels(favGroup, false).map { it.id })
+        core.moveFavorite(sports, -1)
+        assertEquals(listOf(sports.id, news.id), core.channels(favGroup, false).map { it.id }, "already first")
+
+        // Recent searches: newest first, no duplicates, short queries ignored.
+        listOf("film", "news", "x", "FILM").forEach(core::rememberSearch)
+        assertEquals(listOf("FILM", "news"), core.recentSearches())
+        core.clearRecentSearches()
+        assertTrue(core.recentSearches().isEmpty())
+
+        // New settings persist.
+        core.updateSettings(core.settings.copy(audioLanguage = "fa", subtitleLanguage = "en", autoplayNextEpisode = false))
+        val reread = TunerCore::class.java.getDeclaredMethod("loadSettings").apply { isAccessible = true }.invoke(core) as app.tuner.core.model.Settings
+        assertEquals(Triple("fa", "en", false), Triple(reread.audioLanguage, reread.subtitleLanguage, reread.autoplayNextEpisode))
+
+        // The fixture account expires in 2030.
+        assertTrue(core.expiringSources(7).isEmpty())
+        assertEquals(listOf(id), core.expiringSources(3650).map { it.id })
+
+        // Next episode follows season order and ends with the last one.
+        val show = core.series(core.vodGroups(ContentKind.SERIES, false).first { it.name == "Uncategorized" }, 0, 50).single()
+        val episodes = core.seriesDetails(show).episodes
+        val next = core.nextEpisode(core.playEpisode(show, episodes.first()))
+        assertEquals("Two", next?.title)
+        assertNull(core.nextEpisode(next!!))
+        assertNull(core.nextEpisode(core.playMovie(core.movies(core.vodGroups(ContentKind.MOVIE, false).first { it.name == "Films" }, 0, 1).single())))
+    }
+
+    @Test
     fun changeNotificationsAreScoped() = runBlocking {
         val core = core()
         val id = core.addSource(SourceInput("Demo", SourceType.XTREAM, "demo.test:8080", "u", "p w"))
