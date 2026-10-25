@@ -2,9 +2,6 @@ package app.tuner.tv.ui.guide
 
 import android.view.KeyEvent as NativeKeyEvent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -77,7 +74,6 @@ import app.tuner.tv.ui.components.EmptyState
 import app.tuner.tv.ui.components.FocusSurface
 import app.tuner.tv.ui.components.MenuAction
 import app.tuner.tv.ui.components.PinDialog
-import app.tuner.tv.ui.components.PrimaryButton
 import app.tuner.tv.ui.components.ProgressBar
 import app.tuner.tv.ui.guide.GuideViewModel.Companion.HOUR
 import app.tuner.tv.ui.guide.GuideViewModel.Companion.MINUTE
@@ -92,32 +88,55 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val ROW_HEIGHT = 56.dp
+private val OnAccent = Color(0xFF00201C)
 private val CHANNEL_WIDTH = 210.dp
 private const val VIEWPORT_MINUTES = 150
 
 /** Pending action that needs the parental PIN first. */
 private class Gate(val title: String, val action: () -> Unit)
 
+/**
+ * Live TV: a permanent group list beside the guide. Navigation runs groups → channel names →
+ * programme grid: entering the tab focuses the open group, picking a group moves to its channel
+ * names (OK plays the channel live, fullscreen), and Right enters the grid. Back steps out the same way.
+ */
 @Composable
 fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: GuideViewModel = viewModel()) {
     val nav = LocalNavigator.current
     val scope = rememberCoroutineScope()
-    var showGroups by remember { mutableStateOf(false) }
-    // When the panel closes because focus left for the side menu, don't pull it back to the grid.
-    var leavingToMenu by remember { mutableStateOf(false) }
+    // Coming back from the player lands on the channel that was playing, not the group list.
+    var enterGrid by remember { mutableStateOf(LiveSession.returnTo != null) }
     var menuFor by remember { mutableStateOf<Pair<Channel, Programme?>?>(null) }
     var groupMenu by remember { mutableStateOf<Group?>(null) }
     var gate by remember { mutableStateOf<Gate?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val groupsFocus = remember { FocusRequester() }
+    val gridFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
-    var hasFocus by remember { mutableStateOf(false) }
+    var gridFocused by remember { mutableStateOf(false) }
+    var groupsFocused by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val id = LiveSession.returnTo ?: return@LaunchedEffect
         LiveSession.returnTo = null
         vm.channels.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.let { vm.row = it }
+        vm.onChannel = true
+        vm.focusTime = System.currentTimeMillis()
+    }
+    LaunchedEffect(gridFocused) { if (gridFocused) enterGrid = false }
+    // The group list loads after the home screen first asks for focus; retry once it is there.
+    LaunchedEffect(vm.groups.isNotEmpty()) {
+        if (vm.groups.isEmpty() || gridFocused || groupsFocused) return@LaunchedEffect
+        delay(50)
+        runCatching { focusRequester.requestFocus() }
+    }
+
+    fun focusChannels() {
+        if (vm.channels.isEmpty()) return
+        vm.onChannel = true
+        vm.focusTime = System.currentTimeMillis()
+        runCatching { gridFocus.requestFocus() }
     }
 
     LaunchedEffect(Unit) {
@@ -167,61 +186,70 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Palette.Background).onFocusChanged { hasFocus = it.hasFocus }) {
-        Column(Modifier.fillMaxSize()) {
-            GuideHeader(vm, now)
-            if (vm.loaded && vm.channels.isEmpty()) {
-                EmptyState(
-                    title = if (vm.group?.type == GroupType.FAVORITES) "No favorites yet" else "No channels here",
-                    message = "Press Back to choose another group, or long-press OK on a channel to add it to Favorites.",
-                    action = { PrimaryButton("Choose group", onClick = { showGroups = true }, modifier = Modifier.focusRequester(focusRequester)) },
-                )
+    /** Plays the channel live in fullscreen, keeping the stream if it is already in the preview. */
+    fun watch(channel: Channel) {
+        guarded(channel.locked, channel.name) {
+            val current = playerController.current
+            if (current != null && current.isLive && current.channelId == channel.id) {
+                LiveSession.start(vm.channels, channel, current)
+                nav.push(Screen.LivePlayer)
             } else {
-                GuideGrid(
-                    vm = vm,
-                    now = now,
-                    listState = listState,
-                    modifier = Modifier.focusRequester(focusRequester),
-                    onActivate = { ch, p -> activate(ch, p) },
-                    onMenu = { ch, p -> menuFor = ch to p },
-                    onExitLeft = { showGroups = true },
-                )
+                request({ core.playChannel(channel) }) { req ->
+                    playerController.play(req); LiveSession.start(vm.channels, channel, req); nav.push(Screen.LivePlayer)
+                }
             }
         }
+    }
 
-        AnimatedVisibility(
-            visible = showGroups,
-            enter = slideInHorizontally { -it },
-            exit = slideOutHorizontally { -it },
-        ) {
+    Box(Modifier.fillMaxSize().background(Palette.Background)) {
+        Row(Modifier.fillMaxSize()) {
             GroupsPanel(
                 vm = vm,
-                focusRequester = groupsFocus,
+                // Entering the tab (side menu, app start) focuses the open group.
+                focusRequesters = if (enterGrid) listOf(groupsFocus) else listOf(groupsFocus, focusRequester),
+                modifier = Modifier.onFocusChanged { groupsFocused = it.hasFocus },
                 onSelect = { g ->
                     guarded(g.locked, g.name) {
                         vm.selectGroup(g)
-                        showGroups = false
-                        scope.launch { listState.scrollToItem(0); delay(50); runCatching { focusRequester.requestFocus() } }
+                        scope.launch { listState.scrollToItem(0); delay(50); focusChannels() }
                     }
                 },
                 onMenu = { groupMenu = it },
-                onLeft = { leavingToMenu = true; showGroups = false; onExitLeft() },
+                onLeft = onExitLeft,
+                onRight = { focusChannels() },
             )
+            Spacer(Modifier.width(20.dp))
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                GuideHeader(vm, now)
+                if (vm.loaded && vm.channels.isEmpty()) {
+                    EmptyState(
+                        title = if (vm.group?.type == GroupType.FAVORITES) "No favorites yet" else "No channels here",
+                        message = "Choose another group on the left, or long-press OK on a channel to add it to Favorites.",
+                    )
+                } else {
+                    GuideGrid(
+                        vm = vm,
+                        now = now,
+                        listState = listState,
+                        modifier = Modifier.focusRequester(gridFocus)
+                            .then(if (enterGrid) Modifier.focusRequester(focusRequester) else Modifier)
+                            .onFocusChanged { gridFocused = it.isFocused },
+                        onActivate = { ch, p -> activate(ch, p) },
+                        onWatch = { watch(it) },
+                        onMenu = { ch, p -> menuFor = ch to p },
+                        onExitLeft = { runCatching { groupsFocus.requestFocus() } },
+                    )
+                }
+            }
         }
         message?.let { Toast(it, Modifier.align(Alignment.BottomCenter)) }
     }
 
-    LaunchedEffect(showGroups) {
-        if (showGroups) {
-            delay(50)
-            runCatching { groupsFocus.requestFocus() }
-        } else if (!leavingToMenu) {
-            runCatching { focusRequester.requestFocus() }
-        }
-        leavingToMenu = false
+    // Back steps out one level: programme → channel name → group list → side menu.
+    BackHandler(enabled = gridFocused) {
+        if (vm.onChannel) runCatching { groupsFocus.requestFocus() } else focusChannels()
     }
-    BackHandler(enabled = hasFocus && showGroups) { leavingToMenu = true; showGroups = false; onExitLeft() }
-    BackHandler(enabled = hasFocus && !showGroups) { showGroups = true }
+    BackHandler(enabled = groupsFocused) { onExitLeft() }
 
     menuFor?.let { (ch, p) ->
         val t = System.currentTimeMillis()
@@ -235,11 +263,7 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
                     request({ core.playCatchup(ch, p) }) { req -> LiveSession.start(vm.channels, ch, req); nav.push(Screen.LivePlayer) }
                 }
             })
-            add(MenuAction("Play fullscreen") {
-                guarded(ch.locked, ch.name) {
-                    request({ core.playChannel(ch) }) { req -> playerController.play(req); LiveSession.start(vm.channels, ch, req); nav.push(Screen.LivePlayer) }
-                }
-            })
+            add(MenuAction("Play fullscreen") { watch(ch) })
             add(MenuAction("Hide channel") { scope.launch { core.setHidden(ContentKind.LIVE, ch.sourceId, ch.key, true) } })
             if (core.hasPin()) add(MenuAction(if (ch.locked) "Unlock channel" else "Lock channel") {
                 guarded(true, "Change lock") { scope.launch { core.setLocked(ContentKind.LIVE, ch.sourceId, ch.key, !ch.locked) } }
@@ -334,6 +358,7 @@ private fun GuideGrid(
     listState: androidx.compose.foundation.lazy.LazyListState,
     modifier: Modifier,
     onActivate: (Channel, Programme?) -> Unit,
+    onWatch: (Channel) -> Unit,
     onMenu: (Channel, Programme?) -> Unit,
     onExitLeft: () -> Unit,
 ) {
@@ -361,7 +386,12 @@ private fun GuideGrid(
         }
     }
 
-    fun current(): Programme? = vm.focusedProgramme()
+    fun current(): Programme? = if (vm.onChannel) null else vm.focusedProgramme()
+
+    fun toChannel() {
+        vm.onChannel = true
+        vm.focusTime = System.currentTimeMillis()
+    }
 
     fun moveTime(forward: Boolean) {
         val viewportMs = VIEWPORT_MINUTES * MINUTE
@@ -375,8 +405,10 @@ private fun GuideGrid(
             val visibleEnd = (next?.start ?: target) + 20 * MINUTE
             if (visibleEnd > vm.windowStart + viewportMs) vm.windowStart = align(next?.start ?: target)
         } else {
+            // Left of the programme on now is the channel name; earlier ones are reached with Rewind.
+            if ((p?.start ?: vm.focusTime) <= now) { toChannel(); return }
             val target = (p?.start ?: align(vm.focusTime - 1)) - 1
-            if (target < minTime) { onExitLeft(); return }
+            if (target < minTime) { toChannel(); return }
             val prev = list.lastOrNull { it.start <= target && it.stop > target }
             vm.focusTime = target
             val start = prev?.start ?: align(target)
@@ -402,7 +434,7 @@ private fun GuideGrid(
                         return@onPreviewKeyEvent true
                     }
                     if (e.type == KeyEventType.KeyUp) {
-                        if (okDown && !longPressed) vm.focusedChannel()?.let { onActivate(it, current()) }
+                        if (okDown && !longPressed) vm.focusedChannel()?.let { if (vm.onChannel) onWatch(it) else onActivate(it, current()) }
                         okDown = false
                         longPressed = false
                         return@onPreviewKeyEvent true
@@ -412,14 +444,21 @@ private fun GuideGrid(
                 when (e.key) {
                     Key.DirectionDown -> { if (vm.row < vm.channels.lastIndex) vm.row++; true }
                     Key.DirectionUp -> { if (vm.row > 0) vm.row--; true }
-                    Key.DirectionRight -> { moveTime(true); true }
-                    Key.DirectionLeft -> { moveTime(false); true }
+                    Key.DirectionRight -> {
+                        if (vm.onChannel) {
+                            // Into the grid at the programme on now (or the window's edge if scrolled away).
+                            vm.onChannel = false
+                            vm.focusTime = System.currentTimeMillis().coerceIn(vm.windowStart, vm.windowStart + VIEWPORT_MINUTES * MINUTE - 1)
+                        } else moveTime(true)
+                        true
+                    }
+                    Key.DirectionLeft -> { if (vm.onChannel) onExitLeft() else moveTime(false); true }
                     Key.PageDown, Key.ChannelDown -> { vm.row = (vm.row + 8).coerceAtMost(vm.channels.lastIndex); true }
                     Key.PageUp, Key.ChannelUp -> { vm.row = (vm.row - 8).coerceAtLeast(0); true }
                     Key.Menu -> { vm.focusedChannel()?.let { onMenu(it, current()) }; true }
-                    Key.MediaFastForward -> { vm.windowStart += 2 * HOUR; vm.focusTime = vm.windowStart; true }
+                    Key.MediaFastForward -> { vm.windowStart += 2 * HOUR; vm.focusTime = vm.windowStart; vm.onChannel = false; true }
                     Key.MediaRewind -> {
-                        vm.windowStart = maxOf(vm.windowStart - 2 * HOUR, align(minTime)); vm.focusTime = vm.windowStart; true
+                        vm.windowStart = maxOf(vm.windowStart - 2 * HOUR, align(minTime)); vm.focusTime = vm.windowStart; vm.onChannel = false; true
                     }
                     else -> false
                 }
@@ -444,9 +483,10 @@ private fun GuideGrid(
                             dpPerMs = dpPerMs,
                             now = now,
                             isFocusedRow = focused && index == vm.row,
+                            channelFocused = focused && index == vm.row && vm.onChannel,
                             // Only the focused row depends on the focus time, so moving
                             // left/right recomposes one row instead of every visible row.
-                            focusTime = if (focused && index == vm.row) vm.focusTime else 0L,
+                            focusTime = if (focused && index == vm.row && !vm.onChannel) vm.focusTime else 0L,
                             playing = playerController.current?.channelId == ch.id,
                         )
                     }
@@ -491,6 +531,7 @@ private fun GuideRow(
     dpPerMs: Float,
     now: Long,
     isFocusedRow: Boolean,
+    channelFocused: Boolean,
     focusTime: Long,
     playing: Boolean,
 ) {
@@ -498,13 +539,14 @@ private fun GuideRow(
         Row(
             Modifier.width(CHANNEL_WIDTH).fillMaxHeight().padding(start = 16.dp, end = 6.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(if (isFocusedRow) Palette.SurfaceFocus else Palette.Surface)
+                .background(if (channelFocused) Palette.Accent else if (isFocusedRow) Palette.SurfaceFocus else Palette.Surface)
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 channel.number?.toString() ?: "", style = MaterialTheme.typography.labelMedium,
-                color = if (playing) Palette.Accent else Palette.TextDim, modifier = Modifier.widthIn(min = 34.dp), maxLines = 1, softWrap = false,
+                color = if (channelFocused) OnAccent else if (playing) Palette.Accent else Palette.TextDim,
+                modifier = Modifier.widthIn(min = 34.dp), maxLines = 1, softWrap = false,
             )
             Spacer(Modifier.width(4.dp))
             Artwork(channel.logo, channel.name, Modifier.size(width = 44.dp, height = 32.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit, fontSize = 11)
@@ -512,11 +554,11 @@ private fun GuideRow(
             Column(Modifier.weight(1f)) {
                 Text(
                     channel.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (playing) Palette.Accent else Palette.Text,
+                    color = if (channelFocused) OnAccent else if (playing) Palette.Accent else Palette.Text,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (channel.favorite) Text("★", fontSize = 10.sp, color = Palette.Warning)
-                    if (channel.hasCatchup) Text("⟲", fontSize = 10.sp, color = Palette.Accent)
+                    if (channel.favorite) Text("★", fontSize = 10.sp, color = if (channelFocused) OnAccent else Palette.Warning)
+                    if (channel.hasCatchup) Text("⟲", fontSize = 10.sp, color = if (channelFocused) OnAccent else Palette.Accent)
                     if (channel.locked) Text("🔒", fontSize = 9.sp)
                 }
             }
@@ -527,7 +569,7 @@ private fun GuideRow(
                 ProgrammeCell(
                     title = if (programmes == null) "" else "No information",
                     subtitle = null, x = 0.dp, width = ((windowEnd - windowStart) * dpPerMs).dp,
-                    focused = isFocusedRow, live = false, past = false, catchup = false, progress = null,
+                    focused = isFocusedRow && focusTime != 0L, live = false, past = false, catchup = false, progress = null,
                 )
             } else {
                 for (p in visible) {
@@ -568,7 +610,7 @@ private fun ProgrammeCell(
         else -> Palette.Surface
     }
     val fg = when {
-        focused -> Color(0xFF00201C)
+        focused -> OnAccent
         past && !catchup -> Palette.TextDim
         else -> Palette.Text
     }
@@ -597,18 +639,25 @@ private fun ProgrammeCell(
 @Composable
 private fun GroupsPanel(
     vm: GuideViewModel,
-    focusRequester: FocusRequester,
+    focusRequesters: List<FocusRequester>,
+    modifier: Modifier,
     onSelect: (Group) -> Unit,
     onMenu: (Group) -> Unit,
     onLeft: () -> Unit,
+    onRight: () -> Unit,
 ) {
     val selectedIndex = vm.groups.indexOfFirst { it.id == vm.group?.id }.coerceAtLeast(0)
     val state = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
     Box(
-        Modifier.width(300.dp).fillMaxHeight()
+        modifier.width(240.dp).fillMaxHeight()
             .background(Palette.Surface)
             .onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft) { onLeft(); true } else false
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (e.key) {
+                    Key.DirectionLeft -> { onLeft(); true }
+                    Key.DirectionRight -> { onRight(); true }
+                    else -> false
+                }
             },
     ) {
         Column(Modifier.padding(top = 24.dp)) {
@@ -619,7 +668,9 @@ private fun GroupsPanel(
                     FocusSurface(
                         onClick = { onSelect(g) },
                         onLongClick = { onMenu(g) },
-                        modifier = Modifier.fillMaxWidth().then(if (i == selectedIndex) Modifier.focusRequester(focusRequester) else Modifier),
+                        modifier = Modifier.fillMaxWidth().then(
+                            if (i == selectedIndex) focusRequesters.fold(Modifier as Modifier) { m, r -> m.focusRequester(r) } else Modifier
+                        ),
                         color = if (selected) Palette.SurfaceHigh else Color.Transparent,
                         scale = 1.02f,
                     ) {

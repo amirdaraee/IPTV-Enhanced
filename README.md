@@ -44,7 +44,7 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 **Everything else**
 - Unified search across channels, movies, series and programmes on air in the next 24 hours.
 - Parental PIN: lock channels or groups (with a brute-force lockout), and protect settings.
-- Back behaves predictably everywhere: it closes the innermost thing first (keyboard, overlay, groups panel, category list), returns to Live TV from other tabs, and only then asks to exit. Forms ask before discarding typing.
+- Back behaves predictably everywhere: it closes the innermost thing first (keyboard, overlay, programme → channel name → group list, category list), returns to Live TV from other tabs, and only then asks to exit. Forms ask before discarding typing.
 
 **Your data**
 - Playlists, favorites, hidden/locked/reordered groups, watch progress, recents and settings are kept in a small backup copy that the core rewrites whenever they change. If the app starts with an empty database, it restores from that copy and re-syncs the channels.
@@ -193,12 +193,14 @@ app icon and Top Shelf images from `tools/icons/render.swift`.
 
 | | OK | Hold OK / Menu | Back | Up/Down | Left/Right |
 |-|----|----------------|------|---------|-----------|
-| Guide | Preview, then fullscreen; past programme → catch-up | Context menu | Groups → side menu → exit prompt | Channels | Time |
+| Guide: groups | Open the group's channels | Group menu (reorder, hide, lock, add all to Favorites) | Side menu → exit prompt | Groups | Side menu / channel names |
+| Guide: channel name | Play live, fullscreen | Context menu | Group list | Channels | Group list / programmes |
+| Guide: programme | Preview, then fullscreen; past programme → catch-up | Context menu | Channel name | Channels | Time (Left of the live programme returns to the channel name; Rewind/Fast-forward jump 2 hours) |
 | Live player | Channel list | Options (tracks, picture, favorite) | Cancel number entry / close overlay → guide (on the channel you were watching) | Zap | Info bar |
 | Movies / Series | Open | Context menu | Grid → category list → side menu → Live TV | Rows | Columns |
 | Movie player | Play/pause | | Hide controls while playing, otherwise leave | | Seek |
 
-On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu acts as Back.
+On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu acts as Back. On Apple TV, Back from the group list goes to the tab bar.
 
 ## License
 

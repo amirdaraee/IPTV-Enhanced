@@ -26,7 +26,7 @@ struct RootView: View {
                 WelcomeView()
             case .some(true):
                 TabView(selection: $tab) {
-                    GuideView().tabItem { Label("Live TV", systemImage: "tv") }.tag(HomeTab.live)
+                    GuideView(active: tab == .live).tabItem { Label("Live TV", systemImage: "tv") }.tag(HomeTab.live)
                     VodBrowserView(kind: .movie).tabItem { Label("Movies", systemImage: "film") }.tag(HomeTab.movies)
                     VodBrowserView(kind: .series).tabItem { Label("Series", systemImage: "play.rectangle.on.rectangle") }.tag(HomeTab.series)
                     SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(HomeTab.search)

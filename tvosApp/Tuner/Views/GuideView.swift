@@ -85,12 +85,14 @@ final class GuideModel: ObservableObject {
         let list = g == nil ? [] : ((try? await core.channels(group: g!, includeHidden: false)) ?? [])
         let same = list.map(\.id) == channels.map(\.id)
         channels = list
-        if same {
-            await refreshLoaded()
-        } else {
-            programmes = [:]
-            requested = []
+        if !same {
+            // Rows keep their identity (channel id) across groups and don't reappear, so keep
+            // what is loaded for channels in both lineups and drop the rest.
+            let ids = Set(list.map(\.id))
+            requested = requested.filter(ids.contains)
+            programmes = programmes.filter { ids.contains($0.key) }
         }
+        await refreshLoaded()
         if reset {
             windowStart = align(Fmt.nowMs())
         }
@@ -147,11 +149,6 @@ final class GuideModel: ObservableObject {
         for c in channels where requested.contains(c.id) { requested.remove(c.id); ensureLoaded(c) }
     }
 
-    var canGoBack: Bool {
-        let minStart = align(Fmt.nowMs() - Int64(app?.core.settings.guidePastDays ?? 2) * 24 * hour)
-        return windowStart > minStart
-    }
-
     func segments(for channel: Channel) -> [GuideSegment] {
         guideSegments(programmes[channel.id], windowStart: windowStart)
     }
@@ -188,38 +185,45 @@ enum GuideSegment: Identifiable {
 
 enum GuideFocus: Hashable {
     case cell(Int64, Int64)     // channel id, segment id
+    case channel(Int64)
     case left(Int64)
     case right(Int64)
     case group(String)
 }
 
+/// The group list is a permanent side menu. Navigation runs groups → channel names → programme grid:
+/// the tab opens on the group list, picking a group moves to its channel names (OK plays the channel
+/// live, fullscreen), and Right enters the grid.
 struct GuideView: View {
+    /// True while the Live TV tab is selected; selecting the tab again moves focus to the group list.
+    var active = true
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var engine: PlayerEngine
     @StateObject private var model = GuideModel()
     @StateObject private var gate = PinGate()
     @FocusState private var focus: GuideFocus?
-    @State private var showGroups = false
     @State private var fullscreen = false
     @State private var catchup: PlaybackRequest?
     @State private var message: String?
     @State private var now = Fmt.nowMs()
     @State private var lastCellTime: Int64 = Fmt.nowMs()
     @State private var previousFocus: GuideFocus?
+    @State private var focusedOnce = false
 
     private let ticker = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        GeometryReader { geo in
-            let msPerPoint = Double(viewportMs) / Double(geo.size.width - channelWidth - 16)
-            ZStack(alignment: .leading) {
+        HStack(spacing: 40) {
+            groupsPanel
+            GeometryReader { geo in
+                let msPerPoint = Double(viewportMs) / Double(geo.size.width - channelWidth - 16)
                 VStack(spacing: 0) {
                     GuideHeader(model: model, now: now)
                     ruler(msPerPoint: msPerPoint)
                     if model.loaded && model.channels.isEmpty {
                         EmptyStateView(
                             title: model.group?.type == .favorites ? "No favorites yet" : "No channels here",
-                            message: "Press Menu to choose another group, or press and hold on a programme to add its channel to Favorites."
+                            message: "Choose another group on the left, or press and hold on a programme to add its channel to Favorites."
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .focusable()
@@ -227,22 +231,28 @@ struct GuideView: View {
                         grid(msPerPoint: msPerPoint)
                     }
                 }
-                if showGroups { groupsPanel }
             }
         }
         .background(Palette.background)
         .overlay(alignment: .bottom) { if let message { Toast(text: message).padding(.bottom, 40) } }
-        .onExitCommand {
-            if showGroups { closeGroups() } else { openGroups() }
-        }
+        // Back steps out one level: grid → channel name → group list → tab bar (system default).
+        .onExitCommand(perform: inGroups ? nil : back)
         .onChange(of: focus) { old, f in
             previousFocus = old
             handleFocus(f)
         }
         .onChange(of: model.channels.first?.id) { _, first in
-            // Open on the live programme of the first channel.
-            guard let first, !showGroups else { return }
-            refocus(first, at: Fmt.nowMs())
+            guard let first else { return }
+            if focus != nil, !inGroups {
+                focusChannel(first)
+            } else if !focusedOnce, let g = model.group {
+                // First load: start on the open group rather than the tab bar.
+                focusedOnce = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focus = .group(g.id) }
+            }
+        }
+        .onChange(of: active) { _, isActive in
+            if isActive { openGroups() }
         }
         .onReceive(ticker) { _ in now = Fmt.nowMs() }
         .task { model.start(app: app) }
@@ -294,6 +304,8 @@ struct GuideView: View {
                             playing: engine.current?.channelId?.int64Value == ch.id,
                             focus: $focus,
                             activate: activate,
+                            watch: watch,
+                            openGroups: openGroups,
                             menu: { ch, p in AnyView(channelMenu(ch, p)) }
                         )
                         .equatable()
@@ -330,16 +342,7 @@ struct GuideView: View {
         if let p, p.isLive(now: now), ch.hasCatchup {
             Button("Restart this programme") { playCatchup(ch, p) }
         }
-        Button("Play fullscreen") {
-            gate.run(app.core, locked: ch.locked, title: ch.name) {
-                Task {
-                    guard let req = try? await app.core.playChannel(channel: ch) else { return }
-                    engine.play(req)
-                    LiveLineup.start(model.channels, current: ch)
-                    fullscreen = true
-                }
-            }
-        }
+        Button("Play fullscreen") { watch(ch) }
         Button("Hide channel") { Task { try? await app.core.setHidden(kind: .live, sourceId: ch.sourceId, key: ch.key, hidden: true) } }
         if app.core.hasPin() {
             Button(ch.locked ? "Unlock channel" : "Lock channel") {
@@ -359,6 +362,12 @@ struct GuideView: View {
             let list = model.programmes[chId] ?? []
             model.focusedProgramme = segId > 0 ? list.first { $0.start == segId } : nil
             if let p = model.focusedProgramme { lastCellTime = max(p.start, model.windowStart) }
+        case let .channel(chId):
+            // The header shows what is on now; Right from here enters the grid at the live cell.
+            let t = Fmt.nowMs()
+            model.focusedChannel = model.channels.first { $0.id == chId }
+            model.focusedProgramme = model.programmes[chId]?.first { $0.start <= t && $0.stop > t }
+            lastCellTime = min(max(t, model.windowStart), model.windowStart + viewportMs - 1)
         case let .right(chId), let .left(chId):
             // Edge targets only scroll time when reached by moving sideways from a cell in the
             // same row; any other arrival (initial focus, vertical moves) goes to the live cell.
@@ -377,12 +386,26 @@ struct GuideView: View {
         refocus(chId, at: model.windowStart + viewportMs - hour)
     }
 
+    /// Scrolls back towards now; once the window shows now, Left goes to the channel name.
     private func scrollLeft(_ chId: Int64) {
-        if model.canGoBack {
+        if model.windowStart > align(Fmt.nowMs()) {
             model.shiftWindow(by: -hour)
             refocus(chId, at: model.windowStart + hour - 1)
         } else {
-            openGroups()
+            focusChannel(chId)
+        }
+    }
+
+    private func focusChannel(_ chId: Int64) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            if model.channels.contains(where: { $0.id == chId }) { focus = .channel(chId) }
+        }
+    }
+
+    private func back() {
+        switch focus {
+        case let .cell(chId, _), let .left(chId), let .right(chId): focusChannel(chId)
+        default: openGroups()
         }
     }
 
@@ -428,6 +451,24 @@ struct GuideView: View {
         }
     }
 
+    /// Plays the channel live in fullscreen, keeping the stream if it is already in the preview.
+    private func watch(_ ch: Channel) {
+        gate.run(app.core, locked: ch.locked, title: ch.name) {
+            Task {
+                if engine.current?.isLive != true || engine.current?.channelId?.int64Value != ch.id {
+                    do {
+                        engine.play(try await app.core.playChannel(channel: ch))
+                    } catch {
+                        message = error.localizedDescription
+                        return
+                    }
+                }
+                LiveLineup.start(model.channels, current: ch)
+                fullscreen = true
+            }
+        }
+    }
+
     private func playCatchup(_ ch: Channel, _ p: Programme) {
         gate.run(app.core, locked: ch.locked, title: ch.name) {
             Task {
@@ -444,18 +485,21 @@ struct GuideView: View {
         }
     }
 
+    private var inGroups: Bool {
+        if case .group = focus { return true }
+        return false
+    }
+
+    /// Focuses the open group, rather than whichever group is nearest.
     private func openGroups() {
-        showGroups = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             if let g = model.group { focus = .group(g.id) }
         }
     }
 
-    private func closeGroups() {
-        showGroups = false
-        if let ch = model.focusedChannel ?? model.channels.first {
-            refocus(ch.id, at: lastCellTime)
-        }
+    /// Right from the group list goes to the channel last focused in this group.
+    private func enterChannels() {
+        if let ch = model.focusedChannel ?? model.channels.first { focusChannel(ch.id) }
     }
 
     // MARK: groups panel
@@ -470,9 +514,8 @@ struct GuideView: View {
                             gate.run(app.core, locked: g.locked, title: g.name) {
                                 Task {
                                     await model.select(g)
-                                    showGroups = false
                                     if let first = model.channels.first {
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { refocus(first.id, at: Fmt.nowMs()) }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { focusChannel(first.id) }
                                     }
                                 }
                             }
@@ -486,17 +529,21 @@ struct GuideView: View {
                         }
                         .buttonStyle(RowButtonStyle(selected: g.id == model.group?.id))
                         .focused($focus, equals: .group(g.id))
+                        .onMoveCommand { if $0 == .right { enterChannels() } }
                         .contextMenu { groupMenu(g) }
                     }
                 }
                 .padding(.horizontal, 10)
             }
         }
-        .padding(.top, 30)
-        .frame(width: 520)
+        .padding(.top, 24)
+        .frame(width: 340)
         .frame(maxHeight: .infinity)
-        .background(Palette.surface)
+        // A shaped background stays inside the safe area, so the panel starts below the tab bar.
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20))
+        .padding(.top, 20)
         .focusSection()
+        .defaultFocus($focus, model.group.map { .group($0.id) })
     }
 
     @ViewBuilder
@@ -600,6 +647,8 @@ private struct GuideRowView: View, Equatable {
     let playing: Bool
     let focus: FocusState<GuideFocus?>.Binding
     let activate: (Channel, Programme?) -> Void
+    let watch: (Channel) -> Void
+    let openGroups: () -> Void
     let menu: (Channel, Programme?) -> AnyView
 
     static func == (a: Self, b: Self) -> Bool {
@@ -610,25 +659,15 @@ private struct GuideRowView: View, Equatable {
     var body: some View {
         let ch = channel
         HStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Text(verbatim: Fmt.number(ch.number)).font(.callout).foregroundStyle(playing ? Palette.accent : Palette.textDim)
-                    .lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
-                Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16)
-                    .frame(width: 70, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ch.name).font(.callout.weight(.medium)).lineLimit(1).foregroundStyle(playing ? Palette.accent : Palette.text)
-                    HStack(spacing: 6) {
-                        if ch.favorite { Text("★").foregroundStyle(Palette.warning) }
-                        if ch.hasCatchup { Image(systemName: "clock.arrow.circlepath").foregroundStyle(Palette.accent) }
-                        if ch.locked { Image(systemName: "lock.fill") }
-                    }
-                    .font(.caption2)
-                }
-                Spacer(minLength: 0)
+            // OK on the channel name plays it live in fullscreen, whatever part of the grid is showing.
+            Button { watch(ch) } label: {
+                ChannelLabel(channel: ch, playing: playing)
             }
-            .padding(.horizontal, 16)
+            .buttonStyle(ChannelCellStyle(focusedRow: focusedRow))
             .frame(width: channelWidth - 8, height: rowHeight)
-            .background(focusedRow ? Palette.surfaceFocus : Palette.surface, in: RoundedRectangle(cornerRadius: 12))
+            .focused(focus, equals: .channel(ch.id))
+            .onMoveCommand { if $0 == .left { openGroups() } }
+            .contextMenu { menu(ch, nil) }
 
             // Invisible edge targets: reaching them scrolls the time window.
             Color.clear.frame(width: 8, height: rowHeight).focusable().focused(focus, equals: .left(ch.id))
@@ -672,6 +711,48 @@ private struct GuideRowView: View, Equatable {
                 .contextMenu { menu(channel, nil) }
             }
         }
+    }
+}
+
+private struct ChannelLabel: View {
+    let channel: Channel
+    let playing: Bool
+    @Environment(\.isFocused) private var focused
+
+    var body: some View {
+        let ch = channel
+        HStack(spacing: 14) {
+            Text(verbatim: Fmt.number(ch.number)).font(.callout)
+                .foregroundStyle(focused ? Palette.onAccent : (playing ? Palette.accent : Palette.textDim))
+                .lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
+            Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16)
+                .frame(width: 70, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ch.name).font(.callout.weight(.medium)).lineLimit(1)
+                    .foregroundStyle(focused ? Palette.onAccent : (playing ? Palette.accent : Palette.text))
+                HStack(spacing: 6) {
+                    if ch.favorite { Text("★").foregroundStyle(focused ? Palette.onAccent : Palette.warning) }
+                    if ch.hasCatchup { Image(systemName: "clock.arrow.circlepath").foregroundStyle(focused ? Palette.onAccent : Palette.accent) }
+                    if ch.locked { Image(systemName: "lock.fill") }
+                }
+                .font(.caption2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+    }
+}
+
+/// Channel names: like programme cells, flat and accent-coloured when focused.
+private struct ChannelCellStyle: ButtonStyle {
+    let focusedRow: Bool
+    @Environment(\.isFocused) private var focused
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 12).fill(focused ? Palette.accent : (focusedRow ? Palette.surfaceFocus : Palette.surface)))
+            .foregroundStyle(focused ? Palette.onAccent : Palette.text)
     }
 }
 

@@ -39,6 +39,8 @@ class GuideViewModel : ViewModel() {
     private val requested = HashSet<Long>()
 
     var row by mutableIntStateOf(0)
+    /** True while focus is on the channel-name column rather than a programme. */
+    var onChannel by mutableStateOf(true)
     var focusTime by mutableLongStateOf(System.currentTimeMillis())
     var windowStart by mutableLongStateOf(align(System.currentTimeMillis()))
 

@@ -88,7 +88,7 @@ Legend: **P0** = v1.0 (this build), **P1** = v1.x, **P2** = later. Platform: A =
 ## 8. Remote-control grammar (stable, documented, never changed silently)
 | Context | OK | Long-press OK | Back | Up/Down | Left/Right |
 |---------|----|---------------|------|---------|-----------|
-| Guide | Play channel / catch-up programme | Context menu | Open group sidebar, then exit | Channels | Time |
+| Guide | Channel name: play live fullscreen; programme: preview / catch-up | Context menu | Programme → channel name → group sidebar → exit | Channels | Group sidebar ↔ channel names ↔ time |
 | Player (live) | Toggle channel overlay | Context menu | Hide overlay, then go back | Zap channel | Show info bar |
 | Player (VOD) | Play/pause + controls | Tracks menu | Back | Show controls | Seek |
 | Grids | Open | Context menu | Back | Move | Move |
