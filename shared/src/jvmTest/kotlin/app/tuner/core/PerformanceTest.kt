@@ -74,7 +74,7 @@ class PerformanceTest {
         println("full sync (50k channels + ${epgChannels * programmesPerChannel} programmes): $ms ms, heap delta ~${usedMb() - heapBefore} MB")
         val all = core.liveGroups(false).first { it.type == GroupType.ALL }
         val list = core.channels(all, false)
-        assertEquals(20_000, list.size) // "All channels" is capped
+        assertEquals(50_000, list.size) // "All channels" is capped
         val rows = core.guide(list.take(30), System.currentTimeMillis() - 3_600_000, System.currentTimeMillis() + 3 * 3_600_000)
         assertTrue(rows.all { it.programmes.isNotEmpty() })
         val searchMs = measureTimeMillis { core.search("channel 4242") }

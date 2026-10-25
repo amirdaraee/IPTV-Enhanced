@@ -45,7 +45,7 @@ internal fun mapSeries(
 @Suppress("UNUSED_PARAMETER")
 internal fun mapProgramme(
     sourceId: Long, epgKey: String, start: Long, stop: Long, title: String,
-    description: String?, category: String?, icon: String?, episode: String?,
+    description: String?, category: String?, icon: String?, episode: String?, titleNorm: String?,
 ) = Programme(epgKey, start, stop, title, description, category, icon, episode)
 
 @Suppress("UNUSED_PARAMETER")
@@ -55,7 +55,7 @@ internal fun mapSource(
     lastError: String?, enabled: Long, position: Long, serverTimezone: String?, expiresAt: Long?,
     maxConnections: Long?, outputFormat: String?, autoEpgUrls: String,
 ) = Source(
-    id = id, name = name, type = SourceType.valueOf(type), url = url, username = username, password = password,
+    id = id, name = name, type = enumOr(type, SourceType.M3U), url = url, username = username, password = password,
     epgUrls = splitUrls(epgUrls), autoEpgUrls = splitUrls(autoEpgUrls), userAgent = userAgent,
     epgOffsetMinutes = epgOffsetMinutes.toInt(), refreshHours = refreshHours.toInt(),
     lastRefreshed = lastRefreshed, lastError = lastError, enabled = enabled != 0L,
@@ -66,7 +66,11 @@ internal fun mapProgress(
     pkey: String, sourceId: Long, kind: String, title: String, subtitle: String?, image: String?, url: String,
     positionMs: Long, durationMs: Long, updatedAt: Long, parentKey: String?,
 ) = WatchProgress(
-    pkey, sourceId, ContentKind.valueOf(kind), title, subtitle, image, url, positionMs, durationMs, updatedAt, parentKey,
+    pkey, sourceId, enumOr(kind, ContentKind.MOVIE), title, subtitle, image, url, positionMs, durationMs, updatedAt, parentKey,
 )
 
 internal fun Boolean.toLong() = if (this) 1L else 0L
+
+/** Tolerates values written by a newer version (restored from its backup) instead of failing every read. */
+internal inline fun <reified E : Enum<E>> enumOr(name: String, fallback: E): E =
+    enumValues<E>().firstOrNull { it.name == name } ?: fallback

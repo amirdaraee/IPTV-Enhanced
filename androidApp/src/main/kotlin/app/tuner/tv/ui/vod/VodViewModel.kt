@@ -54,6 +54,8 @@ abstract class VodViewModel(private val kind: ContentKind) : ViewModel() {
         private set
     /** Item to put focus back on when returning from its detail screen. */
     var lastOpenedId: String? = null
+    /** Set when a detail screen opens; the grid then puts focus back on that item once on return. */
+    var restoreFocus = false
     private var endReached = false
     private var loadingMore = false
     // Fires once right away (the initial load), then on catalog, preference and progress changes.

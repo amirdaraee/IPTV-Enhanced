@@ -16,10 +16,6 @@ class Utf8Decoder(private val sink: (CharArray, Int) -> Unit) {
         var n = 0
         var i = offset
         val end = offset + length
-        if (!bomChecked && length > 0) {
-            bomChecked = true
-            if (length >= 3 && bytes[i] == 0xEF.toByte() && bytes[i + 1] == 0xBB.toByte() && bytes[i + 2] == 0xBF.toByte()) i += 3
-        }
         while (i < end) {
             val b = bytes[i++].toInt() and 0xFF
             if (needed > 0) {
@@ -39,7 +35,17 @@ class Utf8Decoder(private val sink: (CharArray, Int) -> Unit) {
                 else -> out[n++] = '�'
             }
         }
-        if (n > 0) sink(out, n)
+        // A byte-order mark decodes to U+FEFF; drop it if it is the first character, which
+        // also covers a BOM split across the first network reads.
+        var from = 0
+        if (!bomChecked && n > 0) {
+            bomChecked = true
+            if (out[0] == '\uFEFF') from = 1
+        }
+        if (n > from) {
+            if (from > 0) out.copyInto(out, 0, from, n)
+            sink(out, n - from)
+        }
     }
 
     private fun emit(cp: Int, n: Int): Int {

@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var pinStep: PinStep?
     @State private var hiddenGroups: [ChannelGroup]?
     @State private var hiddenChannels: [Channel]?
+    /// Mirrors `core.hasPin()`, which SwiftUI can't observe.
+    @State private var hasPin = false
+    @Environment(\.goLive) private var goLive
 
     struct EditTarget: Identifiable { let id: Int64? ; var key: String { "\(id ?? -1)" } }
     enum PinStep: Identifiable { case enter, confirm(String); var id: String { if case let .confirm(p) = self { return "c" + p }; return "e" } }
@@ -25,7 +28,7 @@ struct SettingsView: View {
                     Button { sourceMenu = s } label: { SourceRow(source: s, sync: app.syncStates.first { $0.sourceId == s.id }) }
                         .buttonStyle(RowButtonStyle())
                 }
-                row("Add playlist", "M3U or Xtream Codes") { editing = EditTarget(id: nil) }
+                row("Add playlist", "M3U or Xtream Codes") { protected { editing = EditTarget(id: nil) } }
 
                 if let st = settings {
                     header("TV guide")
@@ -43,10 +46,10 @@ struct SettingsView: View {
                     }
                 }
                 header("Parental control")
-                row(app.core.hasPin() ? "Change PIN" : "Set a PIN", app.core.hasPin() ? "PIN is set" : "Lock channels and groups with a 4-digit PIN") {
+                row(hasPin ? "Change PIN" : "Set a PIN", hasPin ? "PIN is set" : "Lock channels and groups with a 4-digit PIN") {
                     protected { pinStep = .enter }
                 }
-                if app.core.hasPin() {
+                if hasPin {
                     row("Remove PIN", nil) { protected { app.core.clearPin(); reload() } }
                 }
                 row("Hidden groups", nil) { protected { Task { hiddenGroups = (try? await app.core.liveGroups(includeHidden: true))?.filter(\.hidden) ?? [] } } }
@@ -57,19 +60,15 @@ struct SettingsView: View {
             .padding(.horizontal, 120)
             .padding(.vertical, 60)
         }
+        .onExitCommand { goLive() }
         .task { for await _ in app.changes(Changes.catalog | Changes.settings) { reload() } }
         .fullScreenCover(item: $editing) { SourceEditView(sourceId: $0.id) }
         .confirmationDialog(sourceMenu?.name ?? "", isPresented: Binding(get: { sourceMenu != nil }, set: { if !$0 { sourceMenu = nil } }), presenting: sourceMenu) { s in
             Button("Refresh now") { app.core.refresh(sourceId: s.id) }
-            Button("Edit") { editing = EditTarget(id: s.id) }
-            Button(s.enabled ? "Disable" : "Enable") {
-                Task {
-                    try? await app.core.updateSource(id: s.id, input: SourceInput(
-                        name: s.name, type: s.type, url: s.url, username: s.username, password: s.password, epgUrls: s.epgUrls,
-                        userAgent: s.userAgent, epgOffsetMinutes: s.epgOffsetMinutes, refreshHours: s.refreshHours, enabled: !s.enabled))
-                }
-            }
-            Button("Delete", role: .destructive) { confirmDelete = s }
+            // The PIN prompt waits for this dialog to close (see afterDialog).
+            Button("Edit") { afterDialog { protected { editing = EditTarget(id: s.id) } } }
+            Button(s.enabled ? "Disable" : "Enable") { afterDialog { protected { toggleEnabled(s) } } }
+            Button("Delete", role: .destructive) { afterDialog { protected { confirmDelete = s } } }
         }
         .alert("Delete \(confirmDelete?.name ?? "")?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }), presenting: confirmDelete) { s in
             Button("Delete", role: .destructive) {
@@ -117,7 +116,21 @@ struct SettingsView: View {
 
     private func reload() {
         settings = app.core.settings
+        hasPin = app.core.hasPin()
         Task { sources = (try? await app.core.sources()) ?? [] }
+    }
+
+    /// A cover or alert presented while a dialog is still closing doesn't appear.
+    private func afterDialog(_ action: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: action)
+    }
+
+    private func toggleEnabled(_ s: Source) {
+        Task {
+            try? await app.core.updateSource(id: s.id, input: SourceInput(
+                name: s.name, type: s.type, url: s.url, username: s.username, password: s.password, epgUrls: s.epgUrls,
+                userAgent: s.userAgent, epgOffsetMinutes: s.epgOffsetMinutes, refreshHours: s.refreshHours, enabled: !s.enabled))
+        }
     }
 
     private func update(_ transform: (TunerSettings) -> TunerSettings) {
@@ -127,7 +140,8 @@ struct SettingsView: View {
         settings = n
     }
 
-    /// Settings that weaken parental control require the PIN first.
+    /// Settings that weaken parental control require the PIN first: the PIN itself, hidden items,
+    /// and changing playlists (deleting or replacing one would get around its locks).
     private func protected(_ action: @escaping () -> Void) {
         gate.run(app.core, locked: true, title: "Settings", action: action)
     }

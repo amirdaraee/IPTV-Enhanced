@@ -7,7 +7,8 @@ CREATE TABLE programme (
   description TEXT,
   category TEXT,
   icon TEXT,
-  episode TEXT
+  episode TEXT,
+  title_norm TEXT
 );
 CREATE INDEX programme_key_start ON programme(epg_key, start);
 CREATE INDEX programme_source ON programme(source_id);
@@ -33,8 +34,8 @@ promoteEpgChannels:
 UPDATE epg_channel SET source_id = :sourceId WHERE source_id = -:sourceId;
 
 insertProgramme:
-INSERT INTO programme(source_id, epg_key, start, stop, title, description, category, icon, episode)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO programme(source_id, epg_key, start, stop, title, description, category, icon, episode, title_norm)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertEpgChannel:
 INSERT INTO epg_channel(source_id, epg_key, name_norm) VALUES (?, ?, ?);
@@ -46,21 +47,23 @@ distinctProgrammeKeys:
 SELECT DISTINCT epg_key FROM programme;
 
 programmesInWindow:
+-- Sources that share a guide each store a copy; one row per programme.
 SELECT * FROM programme
 WHERE epg_key IN ? AND stop > ? AND start < ?
+GROUP BY epg_key, start
 ORDER BY epg_key, start;
 
 currentProgramme:
 SELECT * FROM programme WHERE epg_key = ? AND start <= :now AND stop > :now ORDER BY start DESC LIMIT 1;
 
 nextProgrammes:
-SELECT * FROM programme WHERE epg_key = ? AND stop > :now ORDER BY start LIMIT :limit;
+SELECT * FROM programme WHERE epg_key = ? AND stop > :now GROUP BY start ORDER BY start LIMIT :limit;
 
 searchProgrammes:
 -- Programmes on air in [from, to): the start index bounds the scan (programmes are
 -- assumed to run under a day), and each hit picks one enabled channel via channel_epg
 -- instead of joining every channel that shares the guide id.
-SELECT p.source_id, p.epg_key, p.start, p.stop, p.title, p.description, p.category, p.icon, p.episode,
+SELECT p.source_id, p.epg_key, p.start, p.stop, p.title, p.description, p.category, p.icon, p.episode, p.title_norm,
        ch.id AS channel_id, ch.name AS channel_name, ch.logo AS channel_logo
 FROM (
   SELECT pr.*, (
@@ -68,7 +71,10 @@ FROM (
     WHERE c.epg_key = pr.epg_key LIMIT 1
   ) AS cid
   FROM programme pr
-  WHERE pr.start > :from - 86400000 AND pr.start < :to AND pr.stop > :from AND pr.title LIKE ('%' || :query || '%')
+  -- :query is already folded with searchNorm and has % _ \ escaped; rows imported before
+  -- title_norm existed fall back to the raw title.
+  WHERE pr.start > :from - 86400000 AND pr.start < :to AND pr.stop > :from
+    AND IFNULL(pr.title_norm, pr.title) LIKE ('%' || :query || '%') ESCAPE '\'
 ) p
 JOIN channel ch ON ch.id = p.cid
 GROUP BY p.epg_key, p.start

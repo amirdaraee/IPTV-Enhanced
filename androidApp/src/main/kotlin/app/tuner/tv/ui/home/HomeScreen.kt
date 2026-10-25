@@ -3,6 +3,7 @@ package app.tuner.tv.ui.home
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.Image
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -139,8 +141,12 @@ fun HomeScreen(onExit: () -> Unit) {
                 .fillMaxHeight()
                 .animateContentSize()
                 .width(if (railFocused) 220.dp else 64.dp)
-                .background(if (railFocused) Palette.Surface.copy(alpha = 0.98f) else Palette.Background)
+                .background(if (railFocused) Palette.Surface else Palette.Background)
                 .onFocusChanged { railFocused = it.hasFocus }
+                // Entering the menu (Left from a screen) lands on the current tab, never on the
+                // item that happens to be level with the focused element, which would switch tabs.
+                .focusProperties { onEnter = { runCatching { tabFocus.getValue(tab).requestFocus() } } }
+                .focusGroup()
                 .onPreviewKeyEvent { e ->
                     if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
                         runCatching { contentFocus.requestFocus() }

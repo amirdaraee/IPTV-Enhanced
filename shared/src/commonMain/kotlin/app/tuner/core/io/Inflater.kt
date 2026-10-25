@@ -4,6 +4,8 @@ package app.tuner.core.io
 expect class GzipInflater() {
     /** Decompresses [length] bytes and passes produced output to [sink]. */
     fun feed(bytes: ByteArray, offset: Int, length: Int, sink: (ByteArray, Int) -> Unit)
+    /** True once the end of the compressed stream was reached; false after a cut-off download. */
+    val finished: Boolean
     fun close()
 }
 
@@ -31,9 +33,13 @@ class TextPipeline(private val sink: (CharArray, Int) -> Unit) {
         route(bytes, offset, length)
     }
 
+    /** Flushes the input; throws if a gzip stream ended early (a dropped or cut-off download). */
     fun finish() {
         if (!decided && head.isNotEmpty()) { decided = true; route(head, 0, head.size) }
-        inflater?.close()
+        val inf = inflater ?: return
+        val complete = inf.finished
+        inf.close()
+        if (!complete) throw DownloadException("The download was cut off before the end")
     }
 
     private fun route(bytes: ByteArray, offset: Int, length: Int) {

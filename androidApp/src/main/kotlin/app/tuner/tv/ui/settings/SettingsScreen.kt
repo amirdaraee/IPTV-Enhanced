@@ -53,6 +53,7 @@ import app.tuner.tv.ui.components.MenuAction
 import app.tuner.tv.ui.components.PinDialog
 import app.tuner.tv.ui.components.SectionTitle
 import app.tuner.tv.ui.theme.Palette
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private sealed interface PinFlow {
@@ -66,6 +67,9 @@ fun SettingsScreen(focusRequester: FocusRequester) {
     val nav = LocalNavigator.current
     val scope = rememberCoroutineScope()
     var sources by remember { mutableStateOf<List<Source>>(emptyList()) }
+    val labels by androidx.compose.runtime.produceState(emptyMap<Long, String>(), sources) {
+        value = runCatching { core.sourceLabels() }.getOrDefault(emptyMap())
+    }
     var syncStates by remember { mutableStateOf<Map<Long, SyncState>>(emptyMap()) }
     var settings by remember { mutableStateOf(core.settings) }
     var sourceMenu by remember { mutableStateOf<Source?>(null) }
@@ -87,7 +91,10 @@ fun SettingsScreen(focusRequester: FocusRequester) {
         core.updateSettings(settings)
     }
 
-    /** Settings that weaken parental control require the PIN first. */
+    /**
+     * Settings that weaken parental control require the PIN first: the PIN itself, hidden items,
+     * and changing playlists (deleting or replacing one would get around its locks).
+     */
     fun protected(action: () -> Unit) {
         if (!core.hasPin() || core.isAllowed(true)) action() else { afterVerify = action; pinFlow = PinFlow.Verify }
     }
@@ -100,14 +107,14 @@ fun SettingsScreen(focusRequester: FocusRequester) {
         item { Text("Settings", style = MaterialTheme.typography.headlineSmall); Spacer(Modifier.height(12.dp)) }
         item { SectionTitle("Playlists") }
         items(sources, key = { it.id }) { s ->
-            SourceRow(s, syncStates[s.id]) { sourceMenu = s }
+            SourceRow(s, syncStates[s.id], label = labels[s.id]) { sourceMenu = s }
         }
         item {
-            SettingRow("Add playlist", "M3U or Xtream Codes", Modifier.focusRequester(focusRequester)) { nav.push(Screen.EditSource(null)) }
+            SettingRow("Add playlist", "M3U or Xtream Codes", Modifier.focusRequester(focusRequester)) { protected { nav.push(Screen.EditSource(null)) } }
         }
         item { Spacer(Modifier.height(16.dp)); SectionTitle("TV guide") }
         item {
-            SettingRow("Keep past programmes", "${settings.guidePastDays} day(s)") {
+            SettingRow("Keep past programmes", "${settings.guidePastDays} day${if (settings.guidePastDays == 1) "" else "s"}") {
                 update { it.copy(guidePastDays = next(listOf(1, 2, 3, 7), it.guidePastDays)) }
             }
         }
@@ -179,15 +186,17 @@ fun SettingsScreen(focusRequester: FocusRequester) {
     sourceMenu?.let { s ->
         ContextMenu(s.name, s.url.substringBefore('?'), listOf(
             MenuAction("Refresh now") { core.refresh(s.id) },
-            MenuAction("Edit") { nav.push(Screen.EditSource(s.id)) },
+            MenuAction("Edit") { protected { nav.push(Screen.EditSource(s.id)) } },
             MenuAction(if (s.enabled) "Disable" else "Enable") {
-                scope.launch {
-                    core.updateSource(s.id, app.tuner.core.model.SourceInput(
-                        s.name, s.type, s.url, s.username, s.password, s.epgUrls, s.userAgent, s.epgOffsetMinutes, s.refreshHours, !s.enabled,
-                    ))
+                protected {
+                    scope.launch {
+                        core.updateSource(s.id, app.tuner.core.model.SourceInput(
+                            s.name, s.type, s.url, s.username, s.password, s.epgUrls, s.userAgent, s.epgOffsetMinutes, s.refreshHours, !s.enabled,
+                        ))
+                    }
                 }
             },
-            MenuAction("Delete") { confirmDelete = s },
+            MenuAction("Delete") { protected { confirmDelete = s } },
         )) { sourceMenu = null }
     }
     confirmDelete?.let { s ->
@@ -195,8 +204,10 @@ fun SettingsScreen(focusRequester: FocusRequester) {
             scope.launch {
                 core.deleteSource(s.id)
                 if (core.sources().isEmpty()) nav.reset(Screen.Welcome)
+                // The deleted row had focus: keep it in Settings instead of letting it fall to the side menu.
+                else { delay(100); runCatching { focusRequester.requestFocus() } }
             }
-        }, onDismiss = { confirmDelete = null })
+        }, onDismiss = { confirmDelete = null }, destructive = true)
     }
     when (val flow = pinFlow) {
         PinFlow.Verify -> PinDialog("Parental PIN", "Enter your current PIN", onSubmit = { pin ->
@@ -207,16 +218,16 @@ fun SettingsScreen(focusRequester: FocusRequester) {
         }, onDismiss = { pinFlow = null })
         is PinFlow.Confirm -> PinDialog("Confirm PIN", "Enter the same PIN again", onSubmit = { pin ->
             if (pin == flow.first) { core.setPin(pin); hasPin = true; pinFlow = null; true } else false
-        }, onDismiss = { pinFlow = null })
+        }, onDismiss = { pinFlow = null }, errorText = "The PINs don't match, try again")
         null -> Unit
     }
     hiddenGroups?.let { list ->
-        val actions = list.map { g -> MenuAction(g.name, "Show") { scope.launch { core.setGroupHidden(g, false) } } }
+        val actions = list.map { g -> MenuAction(g.name, listOfNotNull(labels[g.sourceId], "Show").joinToString(" · ")) { scope.launch { core.setGroupHidden(g, false) } } }
             .ifEmpty { listOf(MenuAction("No hidden groups") {}) }
         ContextMenu("Hidden groups", "Select a group to show it again", actions) { hiddenGroups = null }
     }
     hiddenChannels?.let { list ->
-        val actions = list.map { c -> MenuAction(c.name, "Show") { scope.launch { core.setHidden(ContentKind.LIVE, c.sourceId, c.key, false) } } }
+        val actions = list.map { c -> MenuAction(c.name, listOfNotNull(labels[c.sourceId], "Show").joinToString(" · ")) { scope.launch { core.setHidden(ContentKind.LIVE, c.sourceId, c.key, false) } } }
             .ifEmpty { listOf(MenuAction("No hidden channels") {}) }
         ContextMenu("Hidden channels", "Select a channel to show it again", actions) { hiddenChannels = null }
     }
@@ -235,12 +246,13 @@ private fun SettingRow(title: String, value: String?, modifier: Modifier = Modif
 }
 
 @Composable
-private fun SourceRow(source: Source, sync: SyncState?, onClick: () -> Unit) {
+private fun SourceRow(source: Source, sync: SyncState?, label: String?, onClick: () -> Unit) {
     FocusSurface(onClick = onClick, modifier = Modifier.fillMaxWidth(), scale = 1.01f) {
         Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(source.name, style = MaterialTheme.typography.titleMedium)
+                    // The label adds what differs when two playlists share a name.
+                    Text(label ?: source.name, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.width(10.dp))
                     Dim(if (source.type == SourceType.XTREAM) "Xtream" else "M3U")
                     if (!source.enabled) { Spacer(Modifier.width(10.dp)); Dim("Disabled") }

@@ -25,7 +25,7 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 **Live TV**
 - A grid guide is the home screen, with a live preview and a clock. The group list is always shown beside it; OK on a channel name plays it fullscreen.
 - Play/Pause puts the guide back on the current time; "Earlier programmes" (or Rewind) goes back for catch-up.
-- Groups, Favorites, Recents and All channels; hide or reorder groups, hide channels, and reorder Favorites.
+- Groups, Favorites, Recents and All channels; hide or reorder groups, hide channels (they also leave Favorites and Recents), and reorder Favorites.
 - Optionally starts on the last channel you watched.
 - "Add all to Favorites" for a whole search result (for example `uk news`) or a whole group; divider entries such as `##### SPORTS #####` are skipped.
 - Fullscreen player with:
@@ -203,11 +203,11 @@ app icon and Top Shelf images from `tools/icons/render.swift`.
 | Guide: groups | Open the group's channels | Group menu (reorder, hide, lock, add all to Favorites) | Side menu → exit prompt | Groups | Side menu / channel names |
 | Guide: channel name | Play live, fullscreen | Context menu | Group list | Channels | Group list / programmes |
 | Guide: programme | Preview, then fullscreen; past programme → catch-up | Context menu | Channel name | Channels | Time (Left of the live programme returns to the channel name; Rewind/Fast-forward jump 2 hours) |
-| Live player | Channel list | Options (tracks, picture, favorite) | Cancel number entry / close overlay → guide (on the channel you were watching) | Zap | Info bar |
+| Live player | Channel list | Options (favorite, picture, sleep timer, previous channel, audio and subtitles) | Cancel number entry / close overlay → guide (on the channel you were watching) | Zap | Info bar |
 | Movies / Series | Open | Context menu | Grid → category list → side menu → Live TV | Rows | Columns |
 | Movie player | Play/pause | | Hide controls while playing, otherwise leave | | Seek |
 
-On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu acts as Back. On Apple TV, Back from the group list goes to the tab bar.
+On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu acts as Back. On Apple TV, Back from the group list goes to the tab bar; from the Movies and Series category lists and from Settings it goes to Live TV.
 
 ## License
 

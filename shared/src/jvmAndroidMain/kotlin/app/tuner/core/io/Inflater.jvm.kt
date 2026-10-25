@@ -25,5 +25,7 @@ actual class GzipInflater actual constructor() {
         }
     }
 
+    actual val finished: Boolean get() = inflater.finished()
+
     actual fun close() = inflater.end()
 }

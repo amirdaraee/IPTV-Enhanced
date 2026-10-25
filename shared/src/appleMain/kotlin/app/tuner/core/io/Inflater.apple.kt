@@ -7,7 +7,8 @@ import platform.zlib.*
 actual class GzipInflater actual constructor() {
     private val stream: z_stream = nativeHeap.alloc()
     private val out = ByteArray(64 * 1024)
-    private var finished = false
+    private var done = false
+    actual val finished: Boolean get() = done
     private var closed = false
 
     init {
@@ -17,7 +18,7 @@ actual class GzipInflater actual constructor() {
     }
 
     actual fun feed(bytes: ByteArray, offset: Int, length: Int, sink: (ByteArray, Int) -> Unit) {
-        if (finished || length == 0) return
+        if (done || length == 0) return
         bytes.usePinned { input ->
             out.usePinned { output ->
                 stream.next_in = input.addressOf(offset).reinterpret()
@@ -29,7 +30,7 @@ actual class GzipInflater actual constructor() {
                     val produced = out.size - stream.avail_out.toInt()
                     if (produced > 0) sink(out, produced)
                     if (rc == Z_STREAM_END) {
-                        finished = true
+                        done = true
                         break
                     }
                     if (rc != Z_OK && rc != Z_BUF_ERROR) error("inflate failed: $rc")

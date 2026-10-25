@@ -22,6 +22,8 @@ object Palette {
     val Text = Color(0xFFE8EDF5)
     val TextDim = Color(0xFF8A96AB)
     val Live = Color(0xFFFF5A5F)
+    /** Solid background for the LIVE badge: white text on it stays readable over bright video. */
+    val LiveBadge = Color(0xFFC62828)
     val Warning = Color(0xFFFFB020)
 }
 

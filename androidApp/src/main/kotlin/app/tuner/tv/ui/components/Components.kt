@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +35,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -202,8 +206,26 @@ fun TvTextField(
     val focusManager = LocalFocusManager.current
     val shape = RoundedCornerShape(8.dp)
     LaunchedEffect(editing) { if (editing) keyboard?.show() else keyboard?.hide() }
+    // The keyboard can be closed without reaching the field (its own hide key, or Back while
+    // suggestions are showing); leave editing then too, or the field keeps swallowing keys.
+    val view = LocalView.current
+    DisposableEffect(editing) {
+        if (!editing) return@DisposableEffect onDispose {}
+        var shown = false
+        val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            val visible = ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            if (visible) shown = true else if (shown) editing = false
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
+    }
     Column(modifier) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = if (focused) Palette.Accent else Palette.TextDim)
+        // Typing looks different from a merely focused field, so it's clear OK has taken effect.
+        Text(
+            if (editing) "$label · typing, press Done to finish" else label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (focused) Palette.Accent else Palette.TextDim,
+        )
         Spacer(Modifier.height(6.dp))
         BasicTextField(
             value = value,
@@ -249,8 +271,8 @@ fun TvTextField(
                     }
                 }
                 .clip(shape)
-                .background(if (focused) Palette.SurfaceFocus else Palette.Surface)
-                .border(BorderStroke(if (focused) 2.dp else 1.dp, if (focused) Palette.Accent else Palette.Outline), shape)
+                .background(if (editing) Palette.AccentDim else if (focused) Palette.SurfaceFocus else Palette.Surface)
+                .border(BorderStroke(if (editing) 3.dp else if (focused) 2.dp else 1.dp, if (focused) Palette.Accent else Palette.Outline), shape)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             decorationBox = { inner ->
                 Box {

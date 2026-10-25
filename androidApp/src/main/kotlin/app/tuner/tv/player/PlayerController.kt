@@ -60,10 +60,14 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     /** Increments each time the sleep timer fires, so the UI can leave the player. */
     var sleepFired by mutableIntStateOf(0)
         private set
+    /** The length the sleep timer was set to, for showing the chosen option. */
+    var sleepMinutes by mutableIntStateOf(0)
+        private set
     // Separate from [handler]: stop() clears that one, and the timer must outlive a channel change.
     private val sleepHandler = Handler(Looper.getMainLooper())
     private val sleep = Runnable {
         sleepAt = null
+        sleepMinutes = 0
         stop()
         sleepFired++
     }
@@ -71,6 +75,7 @@ class PlayerController(private val context: Context, private val http: OkHttpCli
     /** Stops playback after [minutes]; 0 turns the timer off. */
     fun setSleepTimer(minutes: Int) {
         sleepHandler.removeCallbacks(sleep)
+        sleepMinutes = minutes
         sleepAt = if (minutes > 0) System.currentTimeMillis() + minutes * 60_000L else null
         if (minutes > 0) sleepHandler.postDelayed(sleep, minutes * 60_000L)
     }

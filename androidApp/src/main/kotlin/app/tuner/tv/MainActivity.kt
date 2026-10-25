@@ -1,6 +1,7 @@
 package app.tuner.tv
 
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -16,12 +17,14 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import app.tuner.core.model.GroupType
 import app.tuner.tv.ui.LocalNavigator
 import app.tuner.tv.ui.Navigator
 import app.tuner.tv.ui.Screen
 import app.tuner.tv.ui.home.HomeScreen
 import app.tuner.tv.ui.home.WelcomeScreen
 import app.tuner.tv.ui.player.LivePlayerScreen
+import app.tuner.tv.ui.player.PlayerKeys
 import app.tuner.tv.ui.player.LiveSession
 import app.tuner.tv.ui.player.VodPlayerScreen
 import app.tuner.tv.ui.settings.SourceEditScreen
@@ -52,6 +55,10 @@ class MainActivity : ComponentActivity() {
         core.lockSession()
     }
 
+    /** The movie player's keys go to it first, whatever Compose or Media3 think has focus. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        PlayerKeys.handler?.invoke(event) == true || super.dispatchKeyEvent(event)
+
     override fun onStart() {
         super.onStart()
         core.refreshStale()
@@ -65,7 +72,10 @@ class MainActivity : ComponentActivity() {
                 if (start == Screen.Home && core.settings.autoplayLastChannel) {
                     core.lastChannel()?.takeIf { core.isAllowed(it.locked) }?.let { ch ->
                         val req = core.playChannel(ch)
-                        LiveSession.start(listOf(ch), ch, req)
+                        // Zap through the channel's own group, not a one-channel lineup.
+                        val group = core.liveGroups(false).firstOrNull { it.type == GroupType.CATEGORY && it.sourceId == ch.sourceId && it.key == ch.categoryKey }
+                        val lineup = group?.takeIf { core.isAllowed(it.locked) }?.let { runCatching { core.channels(it, false) }.getOrNull() }
+                        LiveSession.start(lineup?.takeIf { l -> l.any { it.id == ch.id } } ?: listOf(ch), ch, req)
                         nav.push(Screen.LivePlayer)
                     }
                 }

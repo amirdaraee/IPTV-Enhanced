@@ -59,6 +59,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
     var results by remember { mutableStateOf<SearchResults?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var recent by remember { mutableStateOf(core.recentSearches()) }
+    val labels = app.tuner.tv.ui.components.rememberSourceLabels()
 
     /** A result was opened: keep the query for next time. */
     fun saveQuery() {
@@ -145,7 +146,10 @@ fun SearchScreen(focusRequester: FocusRequester) {
                                 Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Artwork(ch.logo, ch.name, Modifier.size(width = 48.dp, height = 34.dp), contentScale = ContentScale.Fit, fontSize = 11)
                                     Spacer(Modifier.width(10.dp))
-                                    Text(ch.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Column {
+                                        Text(ch.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        labels[ch.sourceId]?.let { Dim(it) }
+                                    }
                                 }
                             }
                         }
@@ -160,7 +164,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                                 Column(Modifier.padding(12.dp)) {
                                     Text(hit.programme.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Dim(formatRange(hit.programme.start, hit.programme.stop))
-                                    Dim(hit.channel.name)
+                                    Dim(listOfNotNull(hit.channel.name, labels[hit.channel.sourceId]).joinToString(" · "))
                                 }
                             }
                         }
@@ -177,6 +181,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Text(m.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                labels[m.sourceId]?.let { Dim(it) }
                             }
                         }
                     }
@@ -192,6 +197,7 @@ fun SearchScreen(focusRequester: FocusRequester) {
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Text(s.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                labels[s.sourceId]?.let { Dim(it) }
                             }
                         }
                     }

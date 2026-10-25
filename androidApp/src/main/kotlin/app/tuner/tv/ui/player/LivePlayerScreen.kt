@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +82,7 @@ import app.tuner.tv.ui.components.sleepActions
 import app.tuner.tv.ui.components.sleepLabel
 import app.tuner.tv.ui.guide.Toast
 import app.tuner.tv.ui.theme.Palette
+import app.tuner.tv.util.formatDuration
 import app.tuner.tv.util.formatRange
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -242,8 +244,9 @@ fun LivePlayerScreen() {
                     return@onPreviewKeyEvent true
                 }
                 when (e.key) {
-                    Key.DirectionUp, Key.ChannelUp -> { zap(-1); true }
-                    Key.DirectionDown, Key.ChannelDown -> { zap(1); true }
+                    // Up/Down move through the list as shown; CH+ goes to the next number, like a TV.
+                    Key.DirectionUp, Key.ChannelDown -> { zap(-1); true }
+                    Key.DirectionDown, Key.ChannelUp -> { zap(1); true }
                     Key.DirectionLeft, Key.DirectionRight, Key.Info -> {
                         if (isCatchup && e.key != Key.Info) {
                             val delta = if (e.key == Key.DirectionRight) 30_000L else -15_000L
@@ -372,7 +375,7 @@ private fun InfoBar(channel: Channel, nowNext: List<Programme>, isCatchup: Boole
                     channel.number?.let { Text("$it  ", style = MaterialTheme.typography.titleLarge, color = Palette.Accent) }
                     Text(channel.name, style = MaterialTheme.typography.titleLarge, color = Color.White, maxLines = 1)
                     Spacer(Modifier.width(12.dp))
-                    if (isCatchup) Badge("CATCH-UP") else Badge("LIVE", Palette.Live.copy(alpha = 0.25f), Palette.Live)
+                    if (isCatchup) Badge("CATCH-UP") else Badge("LIVE", Palette.LiveBadge, Color.White)
                     if (channel.favorite) Text("  ★", color = Palette.Warning)
                     Spacer(Modifier.weight(1f))
                     Clock(style = MaterialTheme.typography.titleLarge)
@@ -380,6 +383,7 @@ private fun InfoBar(channel: Channel, nowNext: List<Programme>, isCatchup: Boole
                 Spacer(Modifier.height(6.dp))
                 if (isCatchup && request != null) {
                     Text(request.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1)
+                    CatchupPosition()
                 } else if (current != null) {
                     Text(current.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -395,6 +399,27 @@ private fun InfoBar(channel: Channel, nowNext: List<Programme>, isCatchup: Boole
                     Dim("Next  ${formatRange(next.start, next.stop)}  ${next.title}")
                 }
             }
+        }
+    }
+}
+
+/** Position in a catch-up recording, so Left/Right seeking isn't blind. */
+@Composable
+private fun CatchupPosition() {
+    var position by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            position = playerController.player.currentPosition
+            duration = playerController.player.duration.takeIf { it > 0 } ?: 0L
+            delay(500)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Dim(if (duration > 0) "${formatDuration(position)} / ${formatDuration(duration)}" else formatDuration(position))
+        if (duration > 0) {
+            Spacer(Modifier.width(12.dp))
+            ProgressBar(position.toFloat() / duration, Modifier.width(240.dp))
         }
     }
 }

@@ -36,7 +36,7 @@ final class PlayerEngine: ObservableObject {
         timeControlObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.isBuffering = p.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                self.isBuffering = self.isStalled
                 if p.timeControlStatus == .playing {
                     self.retries = 0
                     self.status = nil
@@ -138,6 +138,8 @@ final class PlayerEngine: ObservableObject {
             player.seek(to: CMTime(value: startMs, timescale: 1000), toleranceBefore: .zero, toleranceAfter: .positiveInfinity)
         }
         if request.isLive { player.playImmediately(atRate: 1) } else { player.play() }
+        // A retry can leave the status unchanged (still stalled), so don't rely on the observer to re-arm.
+        watchStall()
     }
 
     private func observe(_ item: AVPlayerItem, request: PlaybackRequest) {
@@ -200,13 +202,23 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
-    /// Treats more than 10 s of continuous buffering on a live stream as a failure.
+    /// Waiting for data, or, for live (which doesn't wait to minimise stalls), dropped to paused
+    /// although the user didn't pause: a stream that stopped delivering segments ends up there.
+    private var isStalled: Bool {
+        switch player.timeControlStatus {
+        case .waitingToPlayAtSpecifiedRate: return true
+        case .paused: return current?.isLive == true && wantsPlayback && player.currentItem != nil
+        default: return false
+        }
+    }
+
+    /// Treats more than 10 s of continuous stalling on a live stream as a failure.
     private func watchStall() {
         stallTask?.cancel()
-        guard isBuffering, current?.isLive == true else { return }
+        guard isStalled, current?.isLive == true else { return }
         stallTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 10_000_000_000)
-            guard !Task.isCancelled, self.isBuffering else { return }
+            guard !Task.isCancelled, self.isStalled else { return }
             self.scheduleRetry("Stream stalled")
         }
     }

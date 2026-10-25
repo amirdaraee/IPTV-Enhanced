@@ -210,6 +210,8 @@ class XtreamClient(
             }
             pipeline.finish()
             if (pending.isNotEmpty()) onBatch(pending.toList())
+            // Batches already went to the staging tables; failing here keeps the previous catalog.
+            if (!splitter.isComplete) throw XtreamException("The provider's list was cut off")
         }
     }
 
@@ -290,16 +292,21 @@ class XtreamClient(
         val root = call("get_series_info", "series_id" to seriesId) as? JsonObject
             ?: throw XtreamException("Series not found")
         val info = root.obj("info")
-        val episodes = when (val e = root["episodes"]) {
-            is JsonObject -> e.values.flatMap { it.asObjects() }
-            is JsonArray -> e.flatMap { if (it is JsonArray) it.asObjects() else listOfNotNull(it as? JsonObject) }
+        // Episodes come grouped by season: {"1": [...], "2": [...]} or a list of lists. The
+        // season is often only that key (or position), not a field on the episode.
+        val grouped: List<Pair<Int?, JsonObject>> = when (val e = root["episodes"]) {
+            is JsonObject -> e.entries.flatMap { (k, v) -> v.asObjects().map { k.toIntOrNull() to it } }
+            is JsonArray -> e.flatMapIndexed { i, it ->
+                if (it is JsonArray) it.asObjects().map { o -> (i + 1) to o } else listOfNotNull((it as? JsonObject)?.let { o -> null to o })
+            }
             else -> emptyList()
-        }.mapNotNull { o ->
+        }
+        val episodes = grouped.mapNotNull { (groupSeason, o) ->
             val id = o.str("id") ?: return@mapNotNull null
             val epInfo = o.obj("info")
             XtreamEpisode(
                 id = id,
-                season = o.int("season") ?: epInfo?.int("season") ?: 1,
+                season = o.int("season") ?: epInfo?.int("season") ?: groupSeason ?: 1,
                 episode = o.int("episode_num") ?: 0,
                 title = o.str("title") ?: "Episode ${o.str("episode_num") ?: ""}".trim(),
                 extension = o.str("container_extension") ?: "mp4",

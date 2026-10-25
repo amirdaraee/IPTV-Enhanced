@@ -17,6 +17,10 @@ class JsonObjectSplitter(
     private var oversized = false
     private var inString = false
     private var escaped = false
+    private var started = false
+
+    /** False when the document was opened but never closed, i.e. the body was cut off. */
+    val isComplete: Boolean get() = !started || depth == 0
 
     fun feed(chars: CharArray, length: Int) {
         for (i in 0 until length) {
@@ -40,6 +44,7 @@ class JsonObjectSplitter(
             when (c) {
                 '"' -> inString = true
                 '{', '[' -> {
+                    started = true
                     if (depth == 1 && c == '{') {
                         capturing = true
                         oversized = false

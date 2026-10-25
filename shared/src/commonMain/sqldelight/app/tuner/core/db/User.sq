@@ -55,6 +55,18 @@ INSERT OR REPLACE INTO recent(source_id, ckey, watched_at) VALUES (?, ?, ?);
 trimRecent:
 DELETE FROM recent WHERE watched_at < (SELECT watched_at FROM recent ORDER BY watched_at DESC LIMIT 1 OFFSET 49);
 
+recentKeys:
+SELECT ckey FROM recent WHERE source_id = ?;
+
+rekeyRecent:
+UPDATE OR IGNORE recent SET ckey = :newKey WHERE source_id = :sourceId AND ckey = :oldKey;
+
+progressKeys:
+SELECT pkey FROM progress WHERE source_id = ?;
+
+rekeyProgress:
+UPDATE OR IGNORE progress SET pkey = :newKey WHERE pkey = :oldKey;
+
 getSetting:
 SELECT value FROM setting WHERE skey = ?;
 

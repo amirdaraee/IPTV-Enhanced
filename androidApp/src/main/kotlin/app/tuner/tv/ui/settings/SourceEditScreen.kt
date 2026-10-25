@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -67,6 +68,7 @@ fun SourceEditScreen(sourceId: Long?) {
     var sync by remember { mutableStateOf<SyncState?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
     val firstFocus = remember { FocusRequester() }
+    val saveFocus = remember { FocusRequester() }
     var confirmDiscard by remember { mutableStateOf(false) }
     fun form() = listOf(type, name, url, username, password, epgUrl, userAgent, offsetHours)
     var saved by remember { mutableStateOf(form()) }
@@ -101,9 +103,10 @@ fun SourceEditScreen(sourceId: Long?) {
     }
     fun leave() { if (!nav.pop()) nav.reset(Screen.Welcome) }
     // Back is easy to press by accident on a remote; don't silently throw away typing.
-    BackHandler(enabled = !busy) { if (form() != saved) confirmDiscard = true else leave() }
+    // While checking or syncing, Back is ignored: falling through would close the app.
+    BackHandler { if (!busy) { if (form() != saved) confirmDiscard = true else leave() } }
     if (confirmDiscard) {
-        ConfirmDialog("Discard changes?", "What you entered on this screen will be lost.", "Discard", onConfirm = ::leave, onDismiss = { confirmDiscard = false })
+        ConfirmDialog("Discard changes?", "What you entered on this screen will be lost.", "Discard", onConfirm = ::leave, onDismiss = { confirmDiscard = false }, destructive = true)
     }
 
     fun input() = SourceInput(
@@ -183,7 +186,9 @@ fun SourceEditScreen(sourceId: Long?) {
                 epgUrl, { epgUrl = it }, fieldMod, placeholder = "http://example/epg.xml.gz",
             )
             Spacer(Modifier.height(16.dp))
-            Row(fieldMod, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Down from the last row goes to the main button; the nearest one under the wide
+            // User-Agent field would be Cancel.
+            Row(fieldMod.focusProperties { down = if (busy) FocusRequester.Default else saveFocus }, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 TvTextField("Custom User-Agent (optional)", userAgent, { userAgent = it }, Modifier.weight(2f), keyboardType = KeyboardType.Text)
                 TvTextField("Guide time shift (hours)", offsetHours, { offsetHours = it }, Modifier.weight(1f), keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
             }
@@ -201,7 +206,7 @@ fun SourceEditScreen(sourceId: Long?) {
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PrimaryButton(if (sourceId == null) "Add playlist" else "Save", onClick = ::save)
+                    PrimaryButton(if (sourceId == null) "Add playlist" else "Save", onClick = ::save, Modifier.focusRequester(saveFocus))
                     PrimaryButton("Cancel", onClick = ::leave)
                 }
             }

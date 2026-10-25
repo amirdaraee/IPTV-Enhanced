@@ -3,6 +3,12 @@ import TunerCore
 
 enum HomeTab: Hashable { case live, movies, series, search, settings }
 
+/// Switches to the Live TV tab: Menu at the top level of another tab goes there instead of
+/// leaving the app.
+extension EnvironmentValues {
+    @Entry var goLive: () -> Void = {}
+}
+
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @State private var tab: HomeTab = .live
@@ -33,6 +39,7 @@ struct RootView: View {
                     SearchView().tabItem { Label("Search", systemImage: "magnifyingglass") }.tag(HomeTab.search)
                     SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }.tag(HomeTab.settings)
                 }
+                .environment(\.goLive) { tab = .live }
                 .overlay(alignment: .topTrailing) { SyncBadge() }
                 .overlay(alignment: .bottom) { if let expiry { Toast(text: expiry).padding(.bottom, 50) } }
                 .task {

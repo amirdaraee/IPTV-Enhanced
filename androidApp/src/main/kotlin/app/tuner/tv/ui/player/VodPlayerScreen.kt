@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,11 @@ import app.tuner.tv.ui.theme.Palette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** Set by the movie player while it is open; MainActivity offers it every key first. */
+object PlayerKeys {
+    var handler: ((KeyEvent) -> Boolean)? = null
+}
+
 /** Request handed to the VOD player by the movie/series screens. */
 object VodSession {
     var request: PlaybackRequest? = null
@@ -79,6 +85,11 @@ fun VodPlayerScreen() {
     var showMenu by remember { mutableStateOf(false) }
     var sleepMenu by remember { mutableStateOf(false) }
     val playNowFocus = remember { FocusRequester() }
+    // Focus must go through Compose: focusing the embedded View directly leaves Compose's focus
+    // elsewhere, and then no key reaches the player until a D-pad press happens to move it in.
+    val playerFocus = remember { FocusRequester() }
+    fun focusPlayer() { runCatching { playerFocus.requestFocus() } }
+    var playerFocused by remember { mutableStateOf(false) }
     val player = playerController.player
 
     fun save() {
@@ -95,25 +106,63 @@ fun VodPlayerScreen() {
             setShowRewindButton(true)
         }
     }
-    // The view's key listener is set once; it reads the latest state through this.
+    // The wrapper below is created once; it reads the latest state through this.
     val openMenu by rememberUpdatedState { if (upNext == null) showMenu = true }
+
+    /** Menu opens options; with the controls hidden, Left/Right seek (10 s back, 30 s forward). */
+    fun handleKey(e: KeyEvent): Boolean {
+        val code = e.keyCode
+        // Keys this doesn't handle (OK, FF/RW, play/pause, the D-pad on the controls) are Media3's:
+        // make sure its view really has focus before the activity dispatches the key on.
+        if (upNext == null && !view.hasFocus()) view.requestFocus()
+        if (code == KeyEvent.KEYCODE_MENU) {
+            if (e.action == KeyEvent.ACTION_UP) openMenu()
+            return true
+        }
+        if ((code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) && !view.isControllerFullyVisible && upNext == null) {
+            if (e.action == KeyEvent.ACTION_DOWN) {
+                val delta = if (code == KeyEvent.KEYCODE_DPAD_RIGHT) 30_000L else -10_000L
+                val end = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+                player.seekTo((player.currentPosition + delta).coerceIn(0, end))
+                view.showController()
+            }
+            return true
+        }
+        return false
+    }
+    // PlayerView consumes D-pad keys itself (to show its controls), and the first key after the
+    // screen opens doesn't reach it at all, so the activity hands keys to this first.
+    val keys by rememberUpdatedState(::handleKey)
+    DisposableEffect(Unit) {
+        PlayerKeys.handler = { e -> !showMenu && !sleepMenu && keys(e) }
+        onDispose { PlayerKeys.handler = null }
+    }
 
     fun playNext() {
         val next = upNext ?: return
         upNext = null
         request = next
         playerController.play(next)
-        view.requestFocus()
+        // The card's button had focus; give it back to the player once the card is gone,
+        // or the remote does nothing.
+        scope.launch {
+            delay(50)
+            focusPlayer()
+            view.showController()
+        }
     }
 
     LaunchedEffect(Unit) {
         request?.let { playerController.play(it) }
         view.player = player
-        view.setOnKeyListener { _, code, e ->
-            if (code == KeyEvent.KEYCODE_MENU && e.action == KeyEvent.ACTION_UP) { openMenu(); true } else false
-        }
-        view.requestFocus()
         view.showController()
+        // Requests made before the view is attached (or while the previous screen still holds
+        // focus) are dropped, so keep asking until the player really has it.
+        repeat(20) {
+            if (playerFocused) return@repeat
+            focusPlayer()
+            delay(150)
+        }
         while (true) {
             delay(10_000)
             if (player.isPlaying) save()
@@ -148,7 +197,6 @@ fun VodPlayerScreen() {
             player.removeListener(listener)
             save()
             view.player = null
-            view.setOnKeyListener(null)
             playerController.stop()
         }
     }
@@ -164,7 +212,10 @@ fun VodPlayerScreen() {
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
+        AndroidView(
+            factory = { view },
+            modifier = Modifier.fillMaxSize().focusRequester(playerFocus).onFocusChanged { playerFocused = it.hasFocus },
+        )
         playerController.status?.let {
             Text(it, color = Color.White, modifier = Modifier.align(Alignment.TopCenter).padding(24.dp))
         }
@@ -189,13 +240,13 @@ fun VodPlayerScreen() {
     if (showMenu) {
         ContextMenu(request?.title ?: "Options", request?.subtitle, listOf(MenuAction("Sleep timer", sleepLabel()) { sleepMenu = true })) {
             showMenu = false
-            if (!sleepMenu) view.requestFocus()
+            if (!sleepMenu) focusPlayer()
         }
     }
     if (sleepMenu) {
         ContextMenu("Sleep timer", "Stops playback after", sleepActions()) {
             sleepMenu = false
-            view.requestFocus()
+            focusPlayer()
         }
     }
 }

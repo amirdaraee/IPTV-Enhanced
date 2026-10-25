@@ -5,6 +5,7 @@ import app.tuner.core.io.streamText
 import app.tuner.core.model.Programme
 import app.tuner.core.model.Source
 import app.tuner.core.util.epgNorm
+import app.tuner.core.util.searchNorm
 import app.tuner.core.xmltv.XmltvChannel
 import app.tuner.core.xmltv.XmltvParser
 import io.ktor.client.HttpClient
@@ -45,7 +46,7 @@ internal class EpgImporter(private val db: TunerDatabase, private val http: Http
                 for (p in programmes) {
                     epg.insertProgramme(
                         staging, p.channelEpgId.lowercase(), p.start + offset, p.stop + offset,
-                        p.title, p.description, p.category, p.icon, p.episodeNum,
+                        p.title, p.description, p.category, p.icon, p.episodeNum, searchNorm(p.title),
                     )
                 }
             }
@@ -83,6 +84,11 @@ internal class EpgImporter(private val db: TunerDatabase, private val http: Http
         }
         progress.report("Saving guide", total)
         db.transaction {
+            // Deleted during the import: drop the staged guide instead of orphaning it.
+            if (db.sourceQueries.selectById(source.id).executeAsOneOrNull() == null) {
+                epg.deleteProgrammes(staging); epg.deleteEpgChannels(staging)
+                return@transaction
+            }
             epg.deleteProgrammes(source.id); epg.promoteProgrammes(source.id)
             epg.deleteEpgChannels(source.id); epg.promoteEpgChannels(source.id)
         }

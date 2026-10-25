@@ -107,7 +107,8 @@ fun parseXmltvTime(value: String?): Long? {
     val minute = num(10, 2) ?: 0
     val second = num(12, 2) ?: 0
     var offsetMinutes = 0
-    val tz = s.drop(14).trim()
+    // The zone follows the digits, which may stop at the minutes ("YYYYMMDDhhmm +zzzz").
+    val tz = s.drop(s.takeWhile { it.isDigit() }.length).trim()
     if (tz.length >= 5 && (tz[0] == '+' || tz[0] == '-')) {
         val h = tz.substring(1, 3).toIntOrNull() ?: 0
         val m = tz.substring(3, 5).toIntOrNull() ?: 0

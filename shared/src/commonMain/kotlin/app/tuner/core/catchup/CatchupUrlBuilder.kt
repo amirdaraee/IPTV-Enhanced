@@ -92,6 +92,7 @@ object CatchupUrlBuilder {
             .replace("{S}", p2(utc.second))
         // {duration:60} → duration divided by the given number of seconds (e.g. minutes)
         s = Regex("\\{duration:(\\d+)\\}").replace(s) { m -> (duration / m.groupValues[1].toLong().coerceAtLeast(1)).toString() }
+        s = Regex("\\{offset:(\\d+)\\}").replace(s) { m -> ((now - start) / m.groupValues[1].toLong().coerceAtLeast(1)).toString() }
         s = Regex("\\{(utc|start|utcend|end):([^}]+)\\}").replace(s) { m ->
             val t = if (m.groupValues[1] == "utc" || m.groupValues[1] == "start") utc else end
             m.groupValues[2]

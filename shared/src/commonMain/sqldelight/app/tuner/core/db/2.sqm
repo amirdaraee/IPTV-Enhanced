@@ -1,0 +1,2 @@
+-- v3: accent- and case-folded programme titles for guide search (filled on the next guide import).
+ALTER TABLE programme ADD COLUMN title_norm TEXT;

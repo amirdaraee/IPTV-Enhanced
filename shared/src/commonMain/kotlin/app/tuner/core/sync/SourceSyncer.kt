@@ -33,24 +33,60 @@ internal class SourceSyncer(
 ) {
     private val catalog get() = db.catalogQueries
 
-    suspend fun sync(source: Source, progress: ProgressSink) {
+    /** Returns false when the source was deleted while syncing; its staged rows are then discarded. */
+    suspend fun sync(source: Source, progress: ProgressSink): Boolean {
         clearStaging(source.id)
-        try {
+        val rekeys = try {
             when (source.type) {
                 SourceType.M3U -> syncM3u(source, progress)
-                SourceType.XTREAM -> syncXtream(source, progress)
+                SourceType.XTREAM -> { syncXtream(source, progress); emptyMap() }
             }
         } catch (e: Throwable) {
             clearStaging(source.id)
             throw e
         }
         progress.report("Saving", 0)
-        db.transaction {
+        return db.transactionWithResult {
             val id = source.id
+            // Deleted mid-sync: promoting would orphan the rows under an id that no longer exists.
+            if (db.sourceQueries.selectById(id).executeAsOneOrNull() == null) {
+                clearStaging(id)
+                return@transactionWithResult false
+            }
             catalog.deleteAllCategories(id); catalog.promoteCategories(id)
             catalog.deleteChannels(id); catalog.promoteChannels(id)
             catalog.deleteMovies(id); catalog.promoteMovies(id)
             catalog.deleteSeries(id); catalog.promoteSeries(id)
+            rekey(id, rekeys)
+            true
+        }
+    }
+
+    /** The keys the user's own data refers to in this source: prefs, recents, progress, last channels. */
+    private fun userKeys(sourceId: Long): Set<String> {
+        val u = db.userQueries
+        val movie = "movie:$sourceId:"
+        val channel = "$sourceId|"
+        return buildSet {
+            addAll(catalog.itemPrefKeys(sourceId).executeAsList())
+            addAll(u.recentKeys(sourceId).executeAsList())
+            u.progressKeys(sourceId).executeAsList().forEach { if (it.startsWith(movie)) add(it.removePrefix(movie)) }
+            for (s in LAST_CHANNELS) u.getSetting(s).executeAsOneOrNull()?.let { if (it.startsWith(channel)) add(it.removePrefix(channel)) }
+        }
+    }
+
+    /** Moves the user's data from old item keys to new ones (see [m3uKey]); a key already in use keeps its data. */
+    private fun rekey(sourceId: Long, keys: Map<String, String>) {
+        if (keys.isEmpty()) return
+        val u = db.userQueries
+        for ((old, new) in keys) {
+            catalog.rekeyItemPref(new, sourceId, old)
+            u.rekeyRecent(new, sourceId, old)
+            u.rekeyProgress("movie:$sourceId:$new", "movie:$sourceId:$old")
+        }
+        for (s in LAST_CHANNELS) {
+            val key = u.getSetting(s).executeAsOneOrNull()?.takeIf { it.startsWith("$sourceId|") }?.substringAfter('|') ?: continue
+            keys[key]?.let { u.putSetting(s, "$sourceId|$it") }
         }
     }
 
@@ -63,13 +99,28 @@ internal class SourceSyncer(
 
     // ---------------------------------------------------------------- M3U
 
-    private suspend fun syncM3u(source: Source, progress: ProgressSink) {
+    /** Returns old → new keys for items the user has data under, for [rekey]. */
+    private suspend fun syncM3u(source: Source, progress: ProgressSink): Map<String, String> {
         val staging = -source.id
         val pending = ArrayList<M3uEntry>(BATCH)
         val groups = HashMap<Pair<ContentKind, String>, Int>()
         var liveIndex = 0
         var vodIndex = 0
         var headerEpg: List<String> = emptyList()
+        // Playlists often repeat an entry as a backup stream (same group, name and tvg-id);
+        // later copies get "#2", "#3"… so every key stays unique and stable across syncs.
+        val keyCounts = HashMap<String, Int>()
+        // Keys used to be "group|name|tvg-id"; data saved under that form moves to the current key.
+        val saved = userKeys(source.id)
+        val rekeys = HashMap<String, String>()
+        fun uniqueKey(e: M3uEntry, group: String): String {
+            val base = m3uKey(e, group)
+            val n = (keyCounts[base] ?: 0) + 1
+            keyCounts[base] = n
+            val legacy = "$group|${e.name}|${e.tvgId.orEmpty()}"
+            if (n == 1 && legacy in saved && legacy !in rekeys) rekeys[legacy] = base
+            return if (n == 1) base else "$base#$n"
+        }
 
         fun flush() {
             if (pending.isEmpty()) return
@@ -87,7 +138,7 @@ internal class SourceSyncer(
                         val mode = CatchupUrlBuilder.modeOf(e.catchup)
                         catalog.insertChannel(
                             source_id = staging,
-                            ckey = m3uKey(e, group),
+                            ckey = uniqueKey(e, group),
                             category_key = group,
                             name = e.name,
                             name_norm = searchNorm(e.name),
@@ -107,7 +158,7 @@ internal class SourceSyncer(
                         vodIndex++
                         catalog.insertMovie(
                             source_id = staging,
-                            ckey = m3uKey(e, group),
+                            ckey = uniqueKey(e, group),
                             category_key = group,
                             name = e.name,
                             name_norm = searchNorm(e.name),
@@ -135,9 +186,16 @@ internal class SourceSyncer(
         flush()
         if (liveIndex + vodIndex == 0) throw SyncException("The playlist has no entries")
         db.sourceQueries.setAutoEpg(headerEpg.joinToString("\n"), source.id)
+        return rekeys
     }
 
-    private fun m3uKey(e: M3uEntry, group: String) = "$group|${e.name}|${e.tvgId.orEmpty()}"
+    /**
+     * Identity of an entry across syncs, which favorites, hidden and locked flags hang on. A
+     * tvg-id is the provider's stable id, so it survives the channel being renamed or moved to
+     * another group; without one, the group and name are all there is.
+     */
+    private fun m3uKey(e: M3uEntry, group: String) =
+        e.tvgId?.trim()?.takeIf { it.isNotEmpty() }?.let { "tvg:$it" } ?: "$group|${e.name}"
 
     // ---------------------------------------------------------------- Xtream
 
@@ -161,28 +219,35 @@ internal class SourceSyncer(
         val vodCats = client.categories(ContentKind.MOVIE)
         val seriesCats = client.categories(ContentKind.SERIES)
 
-        fun cats(kind: ContentKind, list: List<app.tuner.core.xtream.XtreamCategory>, used: Set<String?>) {
+        fun cats(kind: ContentKind, list: List<app.tuner.core.xtream.XtreamCategory>, used: Set<String>) {
             db.transaction {
                 list.forEachIndexed { i, c -> catalog.insertCategory(staging, kind.name, c.id, c.name, i.toLong()) }
-                if (null in used || used.any { id -> list.none { it.id == id } }) {
-                    catalog.insertCategory(staging, kind.name, UNCATEGORIZED, UNCATEGORIZED, list.size.toLong())
-                }
+                if (UNCATEGORIZED in used) catalog.insertCategory(staging, kind.name, UNCATEGORIZED, UNCATEGORIZED, list.size.toLong())
             }
         }
+        // Streams without a category, or in one the panel doesn't list (deleted or hidden
+        // there), go to "Uncategorized" so they still have a group.
+        fun categoryKey(id: String?, known: Set<String>) = id?.takeIf { it in known } ?: UNCATEGORIZED
+        val knownLive = liveCats.map { it.id }.toSet()
+        val knownVod = vodCats.map { it.id }.toSet()
+        val knownSeries = seriesCats.map { it.id }.toSet()
 
         // Catalogs are streamed one at a time and written in batches as they arrive,
         // so memory stays flat however large the provider is.
-        val usedLive = HashSet<String?>()
+        val usedLive = HashSet<String>()
+        val seenLive = HashSet<String>()
         var count = 0
         client.streams(ContentKind.LIVE) { batch ->
             db.transaction {
                 for (s in batch) {
+                    if (!seenLive.add(s.id)) continue
                     count++
-                    usedLive += s.categoryId
+                    val category = categoryKey(s.categoryId, knownLive)
+                    usedLive += category
                     catalog.insertChannel(
                         source_id = staging,
                         ckey = s.id,
-                        category_key = s.categoryId ?: UNCATEGORIZED,
+                        category_key = category,
                         name = s.name,
                         name_norm = searchNorm(s.name),
                         number = (s.num ?: count).toLong(),
@@ -201,22 +266,28 @@ internal class SourceSyncer(
             }
             progress.report("Channels", count)
         }
+        // A panel hiccup can answer 200 with "[]": keep the current lineup rather than wipe it.
+        // (A first sync may be empty: some accounts only have movies and series.)
+        if (count == 0 && catalog.channelCount(source.id).executeAsOne() > 0) throw SyncException("The provider returned no channels")
         cats(ContentKind.LIVE, liveCats, usedLive)
 
         // Movies and series are optional extras: a provider failing them must not
         // fail the live lineup. Whatever arrived before an error is kept.
-        val usedVod = HashSet<String?>()
+        val usedVod = HashSet<String>()
+        val seenVod = HashSet<String>()
         var vodCount = 0
         optional {
             client.streams(ContentKind.MOVIE) { batch ->
                 db.transaction {
                     for (m in batch) {
+                        if (!seenVod.add(m.id)) continue
                         vodCount++
-                        usedVod += m.categoryId
+                        val category = categoryKey(m.categoryId, knownVod)
+                        usedVod += category
                         catalog.insertMovie(
                             source_id = staging,
                             ckey = m.id,
-                            category_key = m.categoryId ?: UNCATEGORIZED,
+                            category_key = category,
                             name = m.name,
                             name_norm = searchNorm(m.name),
                             poster = m.icon,
@@ -234,18 +305,21 @@ internal class SourceSyncer(
         }
         cats(ContentKind.MOVIE, vodCats, usedVod)
 
-        val usedSeries = HashSet<String?>()
+        val usedSeries = HashSet<String>()
+        val seenSeries = HashSet<String>()
         var seriesCount = 0
         optional {
             client.series { batch ->
                 db.transaction {
                     for (s in batch) {
+                        if (!seenSeries.add(s.id)) continue
                         seriesCount++
-                        usedSeries += s.categoryId
+                        val category = categoryKey(s.categoryId, knownSeries)
+                        usedSeries += category
                         catalog.insertSeries(
                             source_id = staging,
                             ckey = s.id,
-                            category_key = s.categoryId ?: UNCATEGORIZED,
+                            category_key = category,
                             name = s.name,
                             name_norm = searchNorm(s.name),
                             cover = s.cover,
@@ -283,6 +357,7 @@ internal class SourceSyncer(
     companion object {
         const val BATCH = 2_000
         const val UNCATEGORIZED = "Uncategorized"
+        private val LAST_CHANNELS = listOf(app.tuner.core.TunerCore.LAST_CHANNEL, app.tuner.core.TunerCore.PREVIOUS_CHANNEL)
     }
 }
 
@@ -290,5 +365,13 @@ class SyncException(message: String) : Exception(message)
 
 internal fun describe(e: Throwable): String = when (e) {
     is SyncException, is app.tuner.core.xtream.XtreamException, is app.tuner.core.io.DownloadException -> e.message ?: "Error"
-    else -> redact(e.message ?: e::class.simpleName ?: "Unknown error")
+    else -> {
+        val raw = e.message ?: e::class.simpleName ?: "Unknown error"
+        // Apple's networking errors arrive as an NSError dump (with the request URL in it);
+        // keep only its sentence, e.g. "Could not connect to the server."
+        if ("NSURLErrorDomain" in raw) nsErrorText.find(raw)?.groupValues?.get(1) ?: "Can't reach the server"
+        else redact(raw)
+    }
 }
+
+private val nsErrorText = Regex("""Code=-?\d+ "([^"]+)"""")

@@ -19,6 +19,7 @@ struct SourceEditView: View {
     @State private var info: String?
     @State private var busy = false
     @State private var syncingId: Int64?
+    @FocusState private var saveFocused: Bool
 
     private var syncState: SyncState? {
         guard let id = syncingId else { return nil }
@@ -55,11 +56,14 @@ struct SourceEditView: View {
                     }
                     field(type == .xtream ? "Extra EPG URL (optional — the provider's guide is added automatically)" : "EPG URL (optional — read from the playlist if present)",
                           text: $epgUrl, prompt: "http://example/epg.xml.gz", keyboard: .URL)
+                    // Down from the last row goes to the main button; the nearest one under the wide
+                    // User-Agent field would be Cancel.
                     HStack(spacing: 30) {
                         field("Custom User-Agent (optional)", text: $userAgent, prompt: "")
                         field("Guide time shift (hours)", text: $offsetHours, prompt: "0", keyboard: .numbersAndPunctuation)
                             .frame(width: 420)
                     }
+                    .onMoveCommand { if $0 == .down, !busy { saveFocused = true } }
 
                     if let error { Text(error).foregroundStyle(Palette.live) }
                     if let info { Text(info).foregroundStyle(Palette.accent) }
@@ -72,6 +76,7 @@ struct SourceEditView: View {
                     } else {
                         HStack(spacing: 30) {
                             Button(sourceId == nil ? "Add playlist" : "Save") { Task { await save() } }
+                                .focused($saveFocused)
                             Button("Cancel") { dismiss() }
                         }
                     }
@@ -106,6 +111,7 @@ struct SourceEditView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label).font(.caption).foregroundStyle(Palette.textDim)
             TextField(prompt, text: text)
+                .accessibilityLabel(label)
                 .keyboardType(keyboard)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

@@ -1,6 +1,8 @@
 package app.tuner.core
 
 import app.tuner.core.db.TunerDatabase
+import app.tuner.core.model.ContentKind
+import app.tuner.core.model.SourceType
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -95,10 +97,13 @@ internal object UserData {
      */
     fun restore(db: TunerDatabase, text: String): Int {
         val snapshot = runCatching { json.decodeFromString(UserSnapshot.serializer(), text) }.getOrNull() ?: return 0
-        if (snapshot.sources.isEmpty()) return 0
+        // Types a newer version may have added are skipped: this version can't read them back.
+        val sources = snapshot.sources.filter { s -> SourceType.entries.any { it.name == s.type } }
+        if (sources.isEmpty()) return 0
+        fun knownKind(k: String) = ContentKind.entries.any { it.name == k }
         db.transaction {
             val ids = HashMap<Long, Long>()
-            for (s in snapshot.sources) {
+            for (s in sources) {
                 db.sourceQueries.restore(
                     s.name, s.type, s.url, s.username, s.password, s.epgUrls, s.userAgent,
                     s.epgOffsetMinutes, s.refreshHours, if (s.enabled) 1L else 0L, s.position,
@@ -112,23 +117,30 @@ internal object UserData {
                 if (parts.size == 3 && id != null) "${parts[0]}:$id:${parts[2]}" else it
             }
             for (i in snapshot.items) {
-                val id = ids[i.sourceId] ?: continue
+                val id = ids[i.sourceId]?.takeIf { knownKind(i.kind) } ?: continue
                 db.catalogQueries.restoreItemPref(id, i.kind, i.key, if (i.favorite) 1L else 0L, i.favoriteAt, if (i.hidden) 1L else 0L, if (i.locked) 1L else 0L)
             }
             for (g in snapshot.groups) {
-                val id = ids[g.sourceId] ?: continue
+                val id = ids[g.sourceId]?.takeIf { knownKind(g.kind) } ?: continue
                 db.catalogQueries.restoreGroupPref(id, g.kind, g.key, if (g.hidden) 1L else 0L, if (g.locked) 1L else 0L, g.position)
             }
             for (p in snapshot.progress) {
-                val id = ids[p.sourceId] ?: continue
+                val id = ids[p.sourceId]?.takeIf { knownKind(p.kind) } ?: continue
                 db.userQueries.saveProgress(key(p.key)!!, id, p.kind, p.title, p.subtitle, p.image, p.url, p.positionMs, p.durationMs, p.updatedAt, key(p.parentKey))
             }
             for (r in snapshot.recents) {
                 val id = ids[r.sourceId] ?: continue
                 db.userQueries.touchRecent(id, r.key, r.watchedAt)
             }
-            for ((k, v) in snapshot.settings) db.userQueries.putSetting(k, v)
+            for ((k, v) in snapshot.settings) {
+                // The last and previous channel are "<sourceId>|<key>": point them at the new id.
+                val value = if (k == TunerCore.LAST_CHANNEL || k == TunerCore.PREVIOUS_CHANNEL) {
+                    val id = v.substringBefore('|').toLongOrNull()?.let(ids::get) ?: continue
+                    "$id|${v.substringAfter('|')}"
+                } else v
+                db.userQueries.putSetting(k, value)
+            }
         }
-        return snapshot.sources.size
+        return sources.size
     }
 }

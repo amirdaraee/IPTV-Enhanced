@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +74,7 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
 
     fun open(item: VodItem) {
         vm.lastOpenedId = item.id
+        vm.restoreFocus = true
         when (item) {
             is VodItem.MovieItem -> nav.push(Screen.MovieDetail(item.movie.id))
             is VodItem.SeriesItem -> nav.push(Screen.SeriesDetail(item.series.id))
@@ -108,6 +110,8 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
     val selectedIndex = vm.groups.indexOfFirst { it.id == vm.group?.id }.coerceAtLeast(0)
     val categoryState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
     var gridFocused by remember { mutableStateOf(false) }
+    val firstItem = remember { FocusRequester() }
+    var enterGrid by remember { mutableIntStateOf(0) }
     BackHandler(enabled = gridFocused) {
         scope.launch {
             if (categoryState.layoutInfo.visibleItemsInfo.none { it.index == selectedIndex + 1 }) {
@@ -132,8 +136,9 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
             }
             itemsIndexed(vm.groups, key = { _, g -> g.id }) { i, g ->
                 val selected = g.id == vm.group?.id
+                // OK opens the category's grid, as OK on a guide group opens its channels.
                 FocusSurface(
-                    onClick = { if (core.isAllowed(g.locked)) vm.select(g) else gate = { vm.select(g) } },
+                    onClick = { if (core.isAllowed(g.locked)) { vm.select(g); enterGrid++ } else gate = { vm.select(g); enterGrid++ } },
                     modifier = Modifier.fillMaxWidth().then(if (i == selectedIndex) Modifier.focusRequester(focusRequester) else Modifier),
                     color = if (selected) Palette.SurfaceHigh else Color.Transparent,
                     scale = 1.02f,
@@ -148,11 +153,19 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
             }
         }
         val returnFocus = remember { FocusRequester() }
+        LaunchedEffect(enterGrid) {
+            if (enterGrid == 0) return@LaunchedEffect
+            delay(150) // the selected category's items load first
+            runCatching { firstItem.requestFocus() }
+        }
         val gridState = rememberLazyGridState(
             initialFirstVisibleItemIndex = vm.items.indexOfFirst { it.id == vm.lastOpenedId }.coerceAtLeast(0),
         )
+        // Only when coming back from that item's details: passing over Movies in the side menu
+        // composes this screen too, and must not pull focus out of the menu.
         LaunchedEffect(Unit) {
-            if (vm.lastOpenedId != null) {
+            if (vm.lastOpenedId != null && vm.restoreFocus) {
+                vm.restoreFocus = false
                 delay(250) // after HomeScreen's initial focus request
                 runCatching { returnFocus.requestFocus() }
             }
@@ -176,11 +189,13 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                itemsIndexed(vm.items, key = { _, it -> it.id }) { _, item ->
+                itemsIndexed(vm.items, key = { _, it -> it.id }) { i, item ->
                     val restore = item.id == vm.lastOpenedId
                     PosterCard(
                         item, onClick = { open(item) }, onLongClick = { menu = item },
-                        modifier = if (restore) Modifier.focusRequester(returnFocus) else Modifier,
+                        modifier = Modifier
+                            .then(if (restore) Modifier.focusRequester(returnFocus) else Modifier)
+                            .then(if (i == 0) Modifier.focusRequester(firstItem) else Modifier),
                     )
                 }
             }

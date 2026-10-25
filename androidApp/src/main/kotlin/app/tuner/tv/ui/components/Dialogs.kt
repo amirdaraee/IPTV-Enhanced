@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -85,7 +86,8 @@ fun ContextMenu(title: String, subtitle: String?, actions: List<MenuAction>, onD
 }
 
 @Composable
-fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+/** [destructive] dialogs (delete, discard) start on Cancel, so a stray OK keeps the user's data. */
+fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit, destructive: Boolean = false) {
     val focus = remember { FocusRequester() }
     DialogFrame(onDismiss) {
         Column {
@@ -96,8 +98,8 @@ fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: ()
             }
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PrimaryButton(confirm, onClick = { onDismiss(); onConfirm() }, modifier = Modifier.focusRequester(focus))
-                PrimaryButton("Cancel", onClick = onDismiss)
+                PrimaryButton(confirm, onClick = { onDismiss(); onConfirm() }, modifier = if (destructive) Modifier else Modifier.focusRequester(focus))
+                PrimaryButton("Cancel", onClick = onDismiss, modifier = if (destructive) Modifier.focusRequester(focus) else Modifier)
             }
         }
     }
@@ -109,7 +111,7 @@ fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: ()
  * [onSubmit] returns false to signal a wrong PIN (the field shakes clear).
  */
 @Composable
-fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onDismiss: () -> Unit) {
+fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onDismiss: () -> Unit, errorText: String = "Wrong PIN, try again") {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     var lockoutSecs by remember { mutableStateOf(0L) }
@@ -150,7 +152,7 @@ fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onD
             Text(
                 when {
                     lockoutSecs > 0 -> "Too many wrong attempts. Try again in $lockoutSecs s"
-                    error -> "Wrong PIN, try again"
+                    error -> errorText
                     else -> message
                 },
                 color = if (error || lockoutSecs > 0) Palette.Live else Palette.TextDim, textAlign = TextAlign.Center,
@@ -181,7 +183,7 @@ fun PinDialog(title: String, message: String, onSubmit: (String) -> Boolean, onD
                                 modifier = Modifier.width(72.dp).height(52.dp).then(if (r == 0 && c == 0) Modifier.focusRequester(focus) else Modifier),
                                 color = Palette.Surface,
                             ) {
-                                Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 20.sp) }
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, fontSize = 20.sp) }
                             }
                         }
                     }

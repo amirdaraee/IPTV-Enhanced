@@ -97,7 +97,8 @@ struct PinGateOverlay: ViewModifier {
                         guard model.core.unlock(pin: pin) else { return false }
                         let action = p.action
                         gate.pending = nil
-                        DispatchQueue.main.async(execute: action)
+                        // After this cover has closed, so an action that presents something still can.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: action)
                         return true
                     }, onCancel: { gate.pending = nil })
                 }

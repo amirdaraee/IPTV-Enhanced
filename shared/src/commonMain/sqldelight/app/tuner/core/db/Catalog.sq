@@ -201,7 +201,7 @@ FROM channel ch
 JOIN source s ON s.id = ch.source_id AND s.enabled = 1
 JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
 LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
-WHERE p.favorite = 1
+WHERE p.favorite = 1 AND p.hidden = 0
 ORDER BY p.favorite_at;
 
 recentChannels:
@@ -211,6 +211,7 @@ JOIN channel ch ON ch.source_id = r.source_id AND ch.ckey = r.ckey
 JOIN source s ON s.id = ch.source_id AND s.enabled = 1
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
 LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
+WHERE IFNULL(p.hidden, 0) = 0
 GROUP BY r.source_id, r.ckey
 ORDER BY MAX(r.watched_at) DESC
 LIMIT 30;
@@ -227,7 +228,9 @@ SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, C
 FROM channel ch
 LEFT JOIN item_pref p ON p.source_id = ch.source_id AND p.kind = 'LIVE' AND p.ckey = ch.ckey
 LEFT JOIN group_pref g ON g.source_id = ch.source_id AND g.kind = 'LIVE' AND g.ckey = ch.category_key
-WHERE ch.source_id = ? AND ch.ckey = ?;
+-- LIMIT 1: databases synced before keys were made unique can hold duplicates.
+WHERE ch.source_id = ? AND ch.ckey = ?
+LIMIT 1;
 
 searchChannels:
 SELECT ch.*, IFNULL(p.favorite, 0) AS favorite, IFNULL(p.hidden, 0) AS hidden, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
@@ -249,6 +252,9 @@ INSERT OR IGNORE INTO item_pref(source_id, kind, ckey) VALUES (?, ?, ?);
 
 setFavorite:
 UPDATE item_pref SET favorite = ?, favorite_at = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+maxFavoriteAt:
+SELECT MAX(favorite_at) AS latest FROM item_pref WHERE kind = ? AND favorite = 1;
 
 setFavoriteAt:
 UPDATE item_pref SET favorite_at = ? WHERE source_id = ? AND kind = ? AND ckey = ?;
@@ -360,19 +366,27 @@ SELECT m.*, IFNULL(p.favorite, 0) AS favorite, CASE WHEN IFNULL(p.locked, 0) = 1
 FROM movie m
 LEFT JOIN item_pref p ON p.source_id = m.source_id AND p.kind = 'MOVIE' AND p.ckey = m.ckey
 LEFT JOIN group_pref g ON g.source_id = m.source_id AND g.kind = 'MOVIE' AND g.ckey = m.category_key
-WHERE m.source_id = ? AND m.ckey = ?;
+WHERE m.source_id = ? AND m.ckey = ?
+LIMIT 1;
 
 seriesByKey:
 SELECT se.*, IFNULL(p.favorite, 0) AS favorite, CASE WHEN IFNULL(p.locked, 0) = 1 OR IFNULL(g.locked, 0) = 1 THEN 1 ELSE 0 END AS locked
 FROM series se
 LEFT JOIN item_pref p ON p.source_id = se.source_id AND p.kind = 'SERIES' AND p.ckey = se.ckey
 LEFT JOIN group_pref g ON g.source_id = se.source_id AND g.kind = 'SERIES' AND g.ckey = se.category_key
-WHERE se.source_id = ? AND se.ckey = ?;
+WHERE se.source_id = ? AND se.ckey = ?
+LIMIT 1;
 
 groupLocked:
 SELECT locked FROM group_pref WHERE source_id = ? AND kind = ? AND ckey = ?;
 
 -- ---------- user data backup ----------
+
+itemPrefKeys:
+SELECT DISTINCT ckey FROM item_pref WHERE source_id = ?;
+
+rekeyItemPref:
+UPDATE OR IGNORE item_pref SET ckey = :newKey WHERE source_id = :sourceId AND ckey = :oldKey;
 
 allItemPrefs:
 SELECT * FROM item_pref WHERE favorite = 1 OR hidden = 1 OR locked = 1;

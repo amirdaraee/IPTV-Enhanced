@@ -146,7 +146,10 @@ final class GuideModel: ObservableObject {
         let minStart = align(Fmt.nowMs() - Int64(app?.core.settings.guidePastDays ?? 2) * 24 * hour)
         let maxStart = Fmt.nowMs() + Int64(app?.core.settings.guideFutureDays ?? 7) * 24 * hour
         windowStart = min(max(windowStart + delta, minStart), maxStart)
-        for c in channels where requested.contains(c.id) { requested.remove(c.id); ensureLoaded(c) }
+        // Snapshot first: ensureLoaded clears `requested` when the window leaves the loaded range.
+        let visible = channels.filter { requested.contains($0.id) }
+        requested.subtract(visible.map(\.id))
+        for c in visible { ensureLoaded(c) }
     }
 
     /// The guide's past limit, from the settings.
@@ -212,6 +215,10 @@ struct GuideView: View {
     @State private var lastCellTime: Int64 = Fmt.nowMs()
     @State private var previousFocus: GuideFocus?
     @State private var focusedOnce = false
+    /// A row to scroll into view, so focus can land on it.
+    @State private var scrollTarget: Int64?
+    /// Where focus should go once a closing menu or cover has put it back on its opener.
+    @State private var pendingFocus: GuideFocus?
 
     private let ticker = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
@@ -241,6 +248,13 @@ struct GuideView: View {
         // Back steps out one level: grid → channel name → group list → tab bar (system default).
         .onExitCommand(perform: inGroups ? nil : back)
         .onChange(of: focus) { old, f in
+            if let target = pendingFocus, let f, f != target {
+                // Focus came back to whatever opened the menu or cover: send it on.
+                pendingFocus = nil
+                DispatchQueue.main.async { focus = target }
+                return
+            }
+            if f == pendingFocus { pendingFocus = nil }
             previousFocus = old
             handleFocus(f)
         }
@@ -254,8 +268,15 @@ struct GuideView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focus = .group(g.id) }
             }
         }
+        .onChange(of: fullscreen) { _, open in
+            // Back from fullscreen: land on the channel being watched, which zapping may have changed.
+            guard !open, let ch = LiveLineup.current, model.channels.contains(where: { $0.id == ch.id }) else { return }
+            scrollTarget = ch.id
+            focusChannel(ch.id, delay: menuClose)
+        }
         .onChange(of: active) { _, isActive in
-            if isActive { openGroups() }
+            // Focus may still be leaving the previous tab (Menu there switches here), so keep the target.
+            if isActive { openGroups(afterSwitch: true) }
         }
         .onReceive(ticker) { _ in now = Fmt.nowMs() }
         .onPlayPauseCommand { jumpToNow() }
@@ -312,7 +333,7 @@ struct GuideView: View {
                             focus: $focus,
                             activate: activate,
                             watch: watch,
-                            openGroups: openGroups,
+                            openGroups: { openGroups() },
                             menu: { ch, p in AnyView(channelMenu(ch, p)) }
                         )
                         .equatable()
@@ -325,6 +346,11 @@ struct GuideView: View {
             .overlay(alignment: .topLeading) { nowLine(msPerPoint: msPerPoint) }
             .onChange(of: model.group?.id) { _, _ in
                 if let first = model.channels.first { proxy.scrollTo(first.id, anchor: .top) }
+            }
+            .onChange(of: scrollTarget) { _, id in
+                guard let id else { return }
+                proxy.scrollTo(id, anchor: .center)
+                scrollTarget = nil
             }
         }
     }
@@ -354,18 +380,19 @@ struct GuideView: View {
         if model.windowStart != align(now) {
             Button("Back to now") {
                 model.shiftWindow(by: align(Fmt.nowMs()) - model.windowStart)
-                refocus(ch.id, at: Fmt.nowMs())
+                refocus(ch.id, at: Fmt.nowMs(), delay: menuClose)
             }
         }
         if model.group?.type == .favorites {
             Button("Move up") { Task { try? await app.core.moveFavorite(channel: ch, delta: -1) } }
             Button("Move down") { Task { try? await app.core.moveFavorite(channel: ch, delta: 1) } }
         }
-        Button("Hide channel") { Task { try? await app.core.setHidden(kind: .live, sourceId: ch.sourceId, key: ch.key, hidden: true) } }
+        Button("Hide channel") { hide(ch) }
         if app.core.hasPin() {
             Button(ch.locked ? "Unlock channel" : "Lock channel") {
                 gate.run(app.core, locked: true, title: "Change lock") {
-                    Task { try? await app.core.setLocked(kind: .live, sourceId: ch.sourceId, key: ch.key, locked: !ch.locked) }
+                    // Entering the PIN to change a lock must not leave locked content open for the session.
+                    Task { try? await app.core.setLocked(kind: .live, sourceId: ch.sourceId, key: ch.key, locked: !ch.locked); app.core.lockSession() }
                 }
             }
         }
@@ -426,12 +453,16 @@ struct GuideView: View {
     /// The two hours before the visible window, focused on its first programme in this row.
     private func showEarlier(_ chId: Int64) {
         model.shiftWindow(by: -2 * hour)
-        refocus(chId, at: model.windowStart)
+        refocus(chId, at: model.windowStart, delay: menuClose)
     }
 
-    private func focusChannel(_ chId: Int64) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            if model.channels.contains(where: { $0.id == chId }) { focus = .channel(chId) }
+    /// A closing context menu or full-screen cover puts focus back on the element that opened it,
+    /// so focus moves requested at that moment wait a little and are re-applied (see setFocus).
+    private let menuClose = 0.3
+
+    private func focusChannel(_ chId: Int64, delay: Double = 0.05) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            if model.channels.contains(where: { $0.id == chId }) { setFocus(.channel(chId), afterClose: delay > 0.05) }
         }
     }
 
@@ -444,8 +475,8 @@ struct GuideView: View {
 
     /// After the window moves, put focus on the cell covering `time` in the same row.
     /// Retries briefly while the row's programmes are still loading.
-    private func refocus(_ chId: Int64, at time: Int64, attempt: Int = 0) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? 0.05 : 0.3)) {
+    private func refocus(_ chId: Int64, at time: Int64, attempt: Int = 0, delay: Double = 0.05) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 0 ? delay : 0.3)) {
             guard let ch = model.channels.first(where: { $0.id == chId }) else { return }
             if model.programmes[chId] == nil, attempt < 6 {
                 refocus(chId, at: time, attempt: attempt + 1)
@@ -458,8 +489,17 @@ struct GuideView: View {
                 case let .gap(s, w, label): return !label.isEmpty && s <= time && s + w > time
                 }
             } ?? segs.first { if case .programme = $0 { return true } else { return false } }
-            if let target { focus = .cell(chId, target.id) }
+            if let target { setFocus(.cell(chId, target.id), afterClose: delay > 0.05) }
         }
+    }
+
+    /// Moves focus. With `afterClose`, a menu or cover is closing and will put focus back on
+    /// whatever opened it, so the target is also kept until then (and dropped after 2 s).
+    private func setFocus(_ target: GuideFocus, afterClose: Bool = false) {
+        focus = target
+        guard afterClose else { return }
+        pendingFocus = target
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { if pendingFocus == target { pendingFocus = nil } }
     }
 
     private func activate(_ ch: Channel, _ p: Programme?) {
@@ -491,7 +531,12 @@ struct GuideView: View {
         guard app.core.settings.autoplayLastChannel, let ch = try? await app.core.lastChannel(),
               app.core.isAllowed(locked: ch.locked), let req = try? await app.core.playChannel(channel: ch) else { return }
         engine.play(req)
-        LiveLineup.start([ch], current: ch)
+        // Zap through the channel's own group, not a one-channel lineup.
+        let groups = (try? await app.core.liveGroups(includeHidden: false)) ?? []
+        let group = groups.first { $0.type == .category && $0.sourceId == ch.sourceId && $0.key == ch.categoryKey }
+        let lineup = group.flatMap { g in app.core.isAllowed(locked: g.locked) ? g : nil }
+        let channels = lineup == nil ? [] : ((try? await app.core.channels(group: lineup!, includeHidden: false)) ?? [])
+        LiveLineup.start(channels.contains { $0.id == ch.id } ? channels : [ch], current: ch)
         fullscreen = true
     }
 
@@ -535,9 +580,9 @@ struct GuideView: View {
     }
 
     /// Focuses the open group, rather than whichever group is nearest.
-    private func openGroups() {
+    private func openGroups(afterSwitch: Bool = false) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            if let g = model.group { focus = .group(g.id) }
+            if let g = model.group { setFocus(.group(g.id), afterClose: afterSwitch) }
         }
     }
 
@@ -602,14 +647,40 @@ struct GuideView: View {
             }
             Button("Move up") { Task { try? await app.core.moveGroup(group: g, delta: -1) } }
             Button("Move down") { Task { try? await app.core.moveGroup(group: g, delta: 1) } }
-            Button("Hide group") { Task { try? await app.core.setGroupHidden(group: g, hidden: true) } }
+            Button("Hide group") { hide(g) }
             if app.core.hasPin() {
                 Button(g.locked ? "Unlock group" : "Lock group") {
                     gate.run(app.core, locked: true, title: "Change lock") {
-                        Task { try? await app.core.setGroupLocked(group: g, locked: !g.locked) }
+                        Task { try? await app.core.setGroupLocked(group: g, locked: !g.locked); app.core.lockSession() }
                     }
                 }
             }
+        }
+    }
+
+    /// Hides a channel and moves focus to the next one (the previous one at the end), since its row goes away.
+    private func hide(_ ch: Channel) {
+        let list = model.channels
+        let i = list.firstIndex { $0.id == ch.id }
+        let neighbour = i.flatMap { i in list.indices.contains(i + 1) ? list[i + 1] : (i > 0 ? list[i - 1] : nil) }
+        Task {
+            try? await app.core.setHidden(kind: .live, sourceId: ch.sourceId, key: ch.key, hidden: true)
+            if let n = neighbour { setFocus(.channel(n.id), afterClose: true) }
+        }
+    }
+
+    /// Hides a group and keeps focus nearby (the next group, or the previous one at the end);
+    /// if it was the open group, the neighbour opens instead.
+    private func hide(_ g: ChannelGroup) {
+        let i = model.groups.firstIndex { $0.id == g.id }
+        let neighbour = i.flatMap { i in
+            model.groups.indices.contains(i + 1) ? model.groups[i + 1] : (i > 0 ? model.groups[i - 1] : nil)
+        }
+        Task {
+            try? await app.core.setGroupHidden(group: g, hidden: true)
+            guard let n = neighbour else { return }
+            if model.group?.id == g.id, app.core.isAllowed(locked: n.locked) { await model.select(n) }
+            setFocus(.group(n.id), afterClose: true)
         }
     }
 

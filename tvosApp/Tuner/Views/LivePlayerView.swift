@@ -2,6 +2,7 @@ import AVFoundation
 import Combine
 import SwiftUI
 import TunerCore
+import UIKit
 
 /// The lineup the fullscreen player zaps through (the group it was opened from).
 @MainActor
@@ -32,13 +33,16 @@ struct LivePlayerView: View {
     @State private var showInfo = true
     @State private var showList = false
     @State private var showOptions = false
+    @State private var showTracks = false
+    /// Set when a hold opened the options, so the release that follows doesn't also open the channel list.
+    @State private var held = false
     @State private var showSleep = false
     @State private var fill = false
     @State private var infoTask: Task<Void, Never>?
     @State private var message: String?
     @State private var tuneTask: Task<Void, Never>?
     @State private var lastZap = Date.distantPast
-    /// Audio and subtitle tracks of the current item, loaded when the options menu opens.
+    /// Audio and subtitle tracks of the current item, loaded when their dialog opens.
     @State private var tracks: (audio: AVMediaSelectionGroup?, legible: AVMediaSelectionGroup?) = (nil, nil)
     @FocusState private var focus: LiveFocus?
 
@@ -50,8 +54,15 @@ struct LivePlayerView: View {
             VideoSurface(player: engine.player, gravity: fill ? .resizeAspectFill : .resizeAspect).ignoresSafeArea()
 
             // Full-screen focus target that receives remote commands while no overlay is open.
-            Button { showList = true } label: { Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity) }
+            Button { if held { held = false } else { showList = true } } label: { Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity) }
                 .buttonStyle(InvisibleButtonStyle())
+                // Neither a long-press gesture, a context menu nor the button's pressed state sees
+                // every hold here on tvOS (the first press after a dialog closes arrives without its
+                // press-down), so a UIKit recognizer on the window detects it.
+                .background(SelectHoldDetector(enabled: !showList && !showOptions && !showSleep && !showTracks) {
+                    held = true
+                    showOptions = true
+                })
                 .focused($focus, equals: .surface)
                 .onMoveCommand { dir in
                     switch dir {
@@ -64,7 +75,6 @@ struct LivePlayerView: View {
                     engine.togglePause()
                     flashInfo()
                 }
-                .onLongPressGesture(minimumDuration: 0.6) { showOptions = true }
                 .disabled(showList)
 
             #if DEBUG
@@ -106,14 +116,16 @@ struct LivePlayerView: View {
             message = nil
         }
         .confirmationDialog(channel?.name ?? "Options", isPresented: $showOptions) { optionsMenu }
+        .confirmationDialog("Audio and subtitles", isPresented: $showTracks) { tracksMenu }
+        .onChange(of: showOptions) { _, open in if !open { held = false } }
         .confirmationDialog("Sleep timer", isPresented: $showSleep) {
             Button("Off") { engine.setSleepTimer(minutes: 0) }
             ForEach(SleepTimer.minutes, id: \.self) { m in Button("\(m) minutes") { engine.setSleepTimer(minutes: m) } }
             Button("Cancel", role: .cancel) {}
         } message: { Text("Stops playback after the time you choose") }
         .onChange(of: engine.sleepFired) { _, _ in dismiss() }
-        .task(id: showOptions) {
-            guard showOptions, let asset = engine.player.currentItem?.asset else { return }
+        .task(id: showTracks) {
+            guard showTracks, let asset = engine.player.currentItem?.asset else { return }
             tracks = (try? await asset.loadMediaSelectionGroup(for: .audible), try? await asset.loadMediaSelectionGroup(for: .legible))
         }
         .pinGate(gate)
@@ -137,6 +149,14 @@ struct LivePlayerView: View {
         Button("Previous channel") {
             Task { if let prev = try? await app.core.previousChannel() { tune(prev) } else { message = "No previous channel" } }
         }
+        Button("Audio and subtitles") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showTracks = true }
+        }
+        Button("Cancel", role: .cancel) {}
+    }
+
+    @ViewBuilder
+    private var tracksMenu: some View {
         if let item = engine.player.currentItem {
             if let group = tracks.audio {
                 ForEach(Array(group.options.enumerated()), id: \.offset) { _, opt in
@@ -198,7 +218,8 @@ struct LivePlayerView: View {
                 do {
                     engine.play(try await app.core.playChannel(channel: ch))
                     LiveLineup.index = index ?? LiveLineup.channels.firstIndex { $0.id == ch.id } ?? LiveLineup.index
-                    channel = ch
+                    // The lineup holds copies from when it opened; favorites may have changed since.
+                    channel = (try? await app.core.channel(id: ch.id)) ?? ch
                     flashInfo()
                 } catch {
                     message = error.localizedDescription
@@ -329,6 +350,60 @@ private struct InfoBar: View {
 
 struct InvisibleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { configuration.label }
+}
+
+/// Calls `onHold` when the select button is held, wherever focus is, while `enabled`. The
+/// recognizer sits on the window (presses travel up from the focused view) and is removed with
+/// this view.
+struct SelectHoldDetector: UIViewRepresentable {
+    var enabled: Bool
+    let onHold: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> HostView {
+        let v = HostView()
+        v.isUserInteractionEnabled = false
+        v.recognizer = context.coordinator.recognizer
+        return v
+    }
+
+    func updateUIView(_ v: HostView, context: Context) {
+        context.coordinator.onHold = onHold
+        context.coordinator.recognizer.isEnabled = enabled
+    }
+
+    static func dismantleUIView(_ v: HostView, coordinator: Coordinator) {
+        coordinator.recognizer.view?.removeGestureRecognizer(coordinator.recognizer)
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onHold: () -> Void = {}
+        lazy var recognizer: UILongPressGestureRecognizer = {
+            let r = UILongPressGestureRecognizer(target: self, action: #selector(fire(_:)))
+            r.allowedPressTypes = [NSNumber(value: UIPress.PressType.select.rawValue)]
+            r.minimumPressDuration = 0.6
+            r.cancelsTouchesInView = false
+            r.delegate = self
+            return r
+        }()
+
+        /// SwiftUI's own press handling is running at the same time; neither may block the other.
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+        @objc private func fire(_ r: UILongPressGestureRecognizer) {
+            if r.state == .began { onHold() }
+        }
+    }
+
+    final class HostView: UIView {
+        var recognizer: UIGestureRecognizer?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let window, let recognizer { window.addGestureRecognizer(recognizer) }
+        }
+    }
 }
 
 /// Movies, episodes and catch-up in the system player. Progress is saved every 10 s and on exit.

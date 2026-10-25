@@ -45,6 +45,7 @@ import app.tuner.core.xtream.XtreamAccount
 import app.tuner.core.xtream.XtreamClient
 import app.tuner.core.xtream.XtreamCredentials
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -118,7 +119,8 @@ class TunerCore internal constructor(
     /** Playlists restored from [backup] at start-up because the database was empty (e.g. purged by tvOS). */
     val restoredSources: Int = restoreFromBackup()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // A failure in background work (refreshStale, the backup autosave) must never take the app down.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, _ -> })
     private val syncer = SourceSyncer(db, http) { settings.preferHlsLive }
     private val epgImporter = EpgImporter(db, http)
     private val syncLocks = HashMap<Long, Mutex>()
@@ -338,20 +340,30 @@ class TunerCore internal constructor(
     @Throws(Exception::class)
     suspend fun refreshNow(sourceId: Long): String? {
         val lock = locksGuard.withLock { syncLocks.getOrPut(sourceId) { Mutex() } }
-        if (lock.isLocked) {
+        // tryLock, not isLocked + withLock: two callers could both see "free" and sync twice.
+        if (!lock.tryLock()) {
             // A sync is already running: wait for it and report its outcome.
             lock.withLock { }
             return syncStates.value[sourceId]?.error
         }
-        return lock.withLock {
-            val source = source(sourceId) ?: return@withLock "Source not found"
+        return try { syncLocked(sourceId) } finally { lock.unlock() }
+    }
+
+    private suspend fun syncLocked(sourceId: Long): String? {
+        run {
+            val source = source(sourceId) ?: return "Source not found"
             fun report(phase: String, count: Int, running: Boolean = true, error: String? = null) =
                 syncStates.update { it + (sourceId to SyncState(sourceId, running, phase, count, error)) }
             report("Starting", 0)
-            try {
-                withContext(Dispatchers.IO) { syncer.sync(source, ::report) }
+            return try {
+                val kept = withContext(Dispatchers.IO) { syncer.sync(source, ::report) }
+                // Deleted while syncing: nothing was saved; forget its sync state too.
+                val fresh = source(sourceId)
+                if (!kept || fresh == null) {
+                    syncStates.update { it - sourceId }
+                    return "Source removed"
+                }
                 changed(Changes.CATALOG)
-                val fresh = source(sourceId) ?: source
                 val now = nowMillis()
                 val guideError = try {
                     withContext(Dispatchers.IO) {
@@ -361,6 +373,10 @@ class TunerCore internal constructor(
                 } catch (e: Throwable) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     "Guide: ${describe(e)}"
+                }
+                if (source(sourceId) == null) {
+                    syncStates.update { it - sourceId }
+                    return "Source removed"
                 }
                 io { db.sourceQueries.markRefreshed(nowMillis(), sourceId) }
                 guideError?.let { msg -> io { db.sourceQueries.markError(msg, sourceId) } }
@@ -403,8 +419,28 @@ class TunerCore internal constructor(
             Group("c:$sourceId:$k:$ckey", GroupType.CATEGORY, kind, sourceId, ckey, name, sourceName, hidden != 0L, locked != 0L)
         }.executeAsList()
         val multiSource = rows.map { it.sourceId }.distinct().size > 1
+        val labels = if (multiSource) labelsBySource() else emptyMap()
         return rows.filter { includeHidden || !it.hidden }
-            .map { if (multiSource) it else it.copy(sourceName = null) }
+            .map { it.copy(sourceName = labels[it.sourceId]) }
+    }
+
+    /**
+     * A name per source for telling same-named channels, groups and titles apart: its own name,
+     * plus the Xtream username or the playlist file name when two sources share a name. Empty with
+     * a single source, where a label would be noise.
+     */
+    @Throws(Exception::class)
+    suspend fun sourceLabels(): Map<Long, String> = io { labelsBySource() }
+
+    private fun labelsBySource(): Map<Long, String> {
+        val sources = db.sourceQueries.selectAll(::mapSource).executeAsList()
+        if (sources.size < 2) return emptyMap()
+        val count = sources.groupingBy { it.name }.eachCount()
+        return sources.associate { s ->
+            val detail = if (s.type == SourceType.XTREAM) s.username?.takeIf { it.isNotBlank() } ?: "Xtream"
+                else s.url.substringBefore('?').substringAfterLast('/').ifBlank { "M3U" }
+            s.id to if ((count[s.name] ?: 0) > 1) "${s.name} ($detail)" else s.name
+        }
     }
 
     @Throws(Exception::class)
@@ -499,7 +535,16 @@ class TunerCore internal constructor(
 
     @Throws(Exception::class)
     suspend fun setFavorite(kind: ContentKind, sourceId: Long, key: String, favorite: Boolean) = itemPref(kind, sourceId, key) {
-        db.catalogQueries.setFavorite(favorite.toLong(), nowMillis(), sourceId, kind.name, key)
+        db.catalogQueries.setFavorite(favorite.toLong(), nextFavoriteStamp(kind), sourceId, kind.name, key)
+    }
+
+    /**
+     * Favorites are listed by favorite_at. New ones go after every existing one: stamps from a
+     * bulk add (one per channel) or a reorder (small numbers) must never run ahead of a later add.
+     */
+    private fun nextFavoriteStamp(kind: ContentKind): Long {
+        val latest = db.catalogQueries.maxFavoriteAt(kind.name).executeAsOne().latest ?: 0L
+        return maxOf(nowMillis(), latest + 1)
     }
 
     /**
@@ -513,12 +558,12 @@ class TunerCore internal constructor(
         if (targets.isEmpty()) return 0
         io {
             val q = db.catalogQueries
-            val now = nowMillis()
             db.transaction {
+                val first = nextFavoriteStamp(ContentKind.LIVE)
                 targets.forEachIndexed { i, ch ->
                     q.ensureItemPref(ch.sourceId, ContentKind.LIVE.name, ch.key)
                     // Keep the order they were given in: Favorites sorts by time added.
-                    q.setFavorite(favorite.toLong(), now + i, ch.sourceId, ContentKind.LIVE.name, ch.key)
+                    q.setFavorite(favorite.toLong(), first + i, ch.sourceId, ContentKind.LIVE.name, ch.key)
                 }
             }
         }
@@ -794,13 +839,16 @@ class TunerCore internal constructor(
 
     @Throws(Exception::class)
     suspend fun search(query: String): SearchResults {
-        val q = searchNorm(query)
+        // Capped: a pathological query would make SQLite reject the LIKE pattern.
+        val q = searchNorm(query.take(MAX_QUERY))
         if (q.length < 2) return SearchResults(emptyList(), emptyList(), emptyList(), emptyList())
         return io {
             val c = db.catalogQueries
             val now = nowMillis()
-            val programmes = db.epgQueries.searchProgrammes(from = now, to = now + DAY, query = query.trim(), limit = 50) {
-                    _, key, start, stop, title, desc, cat, icon, ep, channelId, _, _ ->
+            // Same folding as the channel search; % _ \ are escaped for LIKE … ESCAPE '\'.
+            val pattern = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            val programmes = db.epgQueries.searchProgrammes(from = now, to = now + DAY, query = pattern, limit = 50) {
+                    _, key, start, stop, title, desc, cat, icon, ep, _, channelId, _, _ ->
                 channelId to Programme(key, start, stop, title, desc, cat, icon, ep)
             }.executeAsList().mapNotNull { (channelId, programme) ->
                 c.channelById(channelId, ::mapChannel).executeAsOneOrNull()?.let { ProgrammeHit(programme, it) }
@@ -907,9 +955,10 @@ class TunerCore internal constructor(
     companion object {
         const val DAY = 86_400_000L
         private const val KINDS = 5
-        private const val MAX_ALL = 20_000L
-        private const val LAST_CHANNEL = "last_channel"
-        private const val PREVIOUS_CHANNEL = "previous_channel"
+        /** A safety cap on "All channels", above the largest lineups seen in practice. */
+        private const val MAX_ALL = 50_000L
+        internal const val LAST_CHANNEL = "last_channel"
+        internal const val PREVIOUS_CHANNEL = "previous_channel"
         private const val PIN_HASH = "pin_hash"
         private const val PIN_SALT = "pin_salt"
         internal const val PIN_FAILURES = "pin_failures"
@@ -917,5 +966,6 @@ class TunerCore internal constructor(
         private const val MAX_PIN_ATTEMPTS = 5
         private const val RECENT_SEARCHES = "recent_searches"
         private const val MAX_RECENT_SEARCHES = 8
+        private const val MAX_QUERY = 200
     }
 }

@@ -89,6 +89,11 @@ class GuideViewModel : ViewModel() {
     }
 
     private suspend fun loadGroup(g: Group?, resetFocus: Boolean) {
+        if (g?.id != group?.id) {
+            // Don't leave the previous group's rows up while a large lineup loads.
+            channels = emptyList()
+            loaded = false
+        }
         group = g
         val list = if (g == null) emptyList() else runCatching { core.channels(g, false) }.getOrDefault(emptyList())
         val focusedId = channels.getOrNull(row)?.id

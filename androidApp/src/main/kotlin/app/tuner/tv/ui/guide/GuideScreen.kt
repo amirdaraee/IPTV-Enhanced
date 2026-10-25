@@ -48,6 +48,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -72,6 +73,7 @@ import app.tuner.tv.ui.components.Clock
 import app.tuner.tv.ui.components.ContextMenu
 import app.tuner.tv.ui.components.Dim
 import app.tuner.tv.ui.components.EmptyState
+import app.tuner.tv.ui.components.LoadingDots
 import app.tuner.tv.ui.components.FocusSurface
 import app.tuner.tv.ui.components.MenuAction
 import app.tuner.tv.ui.components.PinDialog
@@ -86,6 +88,7 @@ import app.tuner.tv.ui.theme.Palette
 import app.tuner.tv.util.formatRange
 import app.tuner.tv.util.formatTime
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private val ROW_HEIGHT = 56.dp
@@ -97,7 +100,7 @@ private const val VIEWPORT_MINUTES = 150
 private var startFocused = false
 
 /** Pending action that needs the parental PIN first. */
-private class Gate(val title: String, val action: () -> Unit)
+private class Gate(val prompt: String, val action: () -> Unit)
 
 /**
  * Live TV: a permanent group list beside the guide. Navigation runs groups → channel names →
@@ -155,8 +158,8 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
         if (message != null) { delay(3000); message = null }
     }
 
-    fun guarded(locked: Boolean, title: String, action: () -> Unit) {
-        if (core.isAllowed(locked)) action() else gate = Gate(title, action)
+    fun guarded(locked: Boolean, title: String, prompt: String = "Enter the PIN to open \"$title\"", action: () -> Unit) {
+        if (core.isAllowed(locked)) action() else gate = Gate(prompt, action)
     }
 
     fun request(block: suspend () -> PlaybackRequest?, then: (PlaybackRequest) -> Unit) {
@@ -217,7 +220,8 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
                 onSelect = { g ->
                     guarded(g.locked, g.name) {
                         vm.selectGroup(g)
-                        scope.launch { listState.scrollToItem(0); delay(50); focusChannels() }
+                        // The grid comes back once the new lineup has loaded; focus its channel names then.
+                        scope.launch { snapshotFlow { vm.loaded }.first { it }; delay(50); listState.scrollToItem(0); focusChannels() }
                     }
                 },
                 onMenu = { groupMenu = it },
@@ -227,7 +231,9 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
             Spacer(Modifier.width(20.dp))
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 GuideHeader(vm, now)
-                if (vm.loaded && vm.channels.isEmpty()) {
+                if (!vm.loaded) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingDots() }
+                } else if (vm.channels.isEmpty()) {
                     EmptyState(
                         title = if (vm.group?.type == GroupType.FAVORITES) "No favorites yet" else "No channels here",
                         message = "Choose another group on the left, or long-press OK on a channel to add it to Favorites.",
@@ -278,7 +284,10 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
             }
             add(MenuAction("Hide channel") { scope.launch { core.setHidden(ContentKind.LIVE, ch.sourceId, ch.key, true) } })
             if (core.hasPin()) add(MenuAction(if (ch.locked) "Unlock channel" else "Lock channel") {
-                guarded(true, "Change lock") { scope.launch { core.setLocked(ContentKind.LIVE, ch.sourceId, ch.key, !ch.locked) } }
+                // Entering the PIN to change a lock must not leave locked content open for the session.
+                guarded(true, "", "Enter the PIN to change locks") {
+                    scope.launch { core.setLocked(ContentKind.LIVE, ch.sourceId, ch.key, !ch.locked); core.lockSession() }
+                }
             })
         }
         ContextMenu(ch.name, p?.title, actions) { menuFor = null }
@@ -296,14 +305,14 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
                 })
                 add(MenuAction("Hide group") { scope.launch { core.setGroupHidden(g, true) } })
                 if (core.hasPin()) add(MenuAction(if (g.locked) "Unlock group" else "Lock group") {
-                    guarded(true, "Change lock") { scope.launch { core.setGroupLocked(g, !g.locked) } }
+                    guarded(true, "", "Enter the PIN to change locks") { scope.launch { core.setGroupLocked(g, !g.locked); core.lockSession() } }
                 })
             }
         }
         if (actions.isEmpty()) groupMenu = null else ContextMenu(g.name, g.sourceName, actions) { groupMenu = null }
     }
     gate?.let { g ->
-        PinDialog("Parental PIN", "Enter the PIN to open \"${g.title}\"", onSubmit = { pin ->
+        PinDialog("Parental PIN", g.prompt, onSubmit = { pin ->
             if (core.unlock(pin)) { gate = null; g.action(); true } else false
         }, onDismiss = { gate = null })
     }
@@ -332,7 +341,7 @@ private fun GuideHeader(vm: GuideViewModel, now: Long) {
             Spacer(Modifier.height(4.dp))
             if (p != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (p.isLive(now)) { Badge("LIVE", Palette.Live.copy(alpha = 0.2f), Palette.Live); Spacer(Modifier.width(8.dp)) }
+                    if (p.isLive(now)) { Badge("LIVE", Palette.LiveBadge, Color.White); Spacer(Modifier.width(8.dp)) }
                     else if (p.stop <= now && ch?.hasCatchup == true) { Badge("CATCH-UP"); Spacer(Modifier.width(8.dp)) }
                     Dim(listOfNotNull(formatRange(p.start, p.stop), p.episodeNum, p.category).joinToString("  ·  "))
                 }
@@ -697,10 +706,18 @@ private fun GroupsPanel(
                                 when (g.type) { GroupType.FAVORITES -> "★  "; GroupType.RECENTS -> "↺  "; GroupType.ALL -> "≡  "; else -> "" } + g.name,
                                 style = MaterialTheme.typography.titleSmall,
                                 color = if (selected) Palette.Accent else Palette.Text,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                // The group name keeps most of the row; the playlist label shrinks first.
+                                modifier = if (g.sourceName == null) Modifier.weight(1f) else Modifier.widthIn(max = 140.dp),
                             )
-                            if (g.locked) Text("🔒", fontSize = 11.sp)
-                            g.sourceName?.let { Dim(it) }
+                            if (g.locked) { Spacer(Modifier.width(6.dp)); Text("🔒", fontSize = 11.sp) }
+                            g.sourceName?.let {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    it, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
                     }
                 }

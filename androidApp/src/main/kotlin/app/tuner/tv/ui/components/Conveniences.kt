@@ -55,7 +55,9 @@ fun sleepLabel(): String {
 
 fun sleepActions(): List<MenuAction> = buildList {
     add(MenuAction("Off", if (playerController.sleepAt == null) "✓" else null) { playerController.setSleepTimer(0) })
-    SLEEP_MINUTES.forEach { m -> add(MenuAction("$m minutes") { playerController.setSleepTimer(m) }) }
+    SLEEP_MINUTES.forEach { m ->
+        add(MenuAction("$m minutes", if (playerController.sleepAt != null && playerController.sleepMinutes == m) "✓" else null) { playerController.setSleepTimer(m) })
+    }
 }
 
 /** "expires in 3 days", "expires today" or "expired", for accounts close to their end date. */
@@ -68,4 +70,13 @@ fun expiryText(source: Source): String? {
         days == 1L -> "expires tomorrow"
         else -> "expires in $days days"
     }
+}
+
+/** [app.tuner.core.TunerCore.sourceLabels] for the current playlists. */
+@Composable
+fun rememberSourceLabels(): Map<Long, String> {
+    val labels by androidx.compose.runtime.produceState(emptyMap<Long, String>()) {
+        value = runCatching { app.tuner.tv.core.sourceLabels() }.getOrDefault(emptyMap())
+    }
+    return labels
 }

@@ -123,6 +123,10 @@ struct VodBrowserView: View {
     @StateObject private var gate = PinGate()
     @State private var path = NavigationPath()
     @State private var resumeRequest: PlaybackRequest?
+    @FocusState private var focus: BrowserFocus?
+    @Environment(\.goLive) private var goLive
+
+    enum BrowserFocus: Hashable { case group(String), item(String) }
 
     init(kind: ContentKind) {
         self.kind = kind
@@ -143,6 +147,7 @@ struct VodBrowserView: View {
                                     Text((g.type == .favorites ? "★  " : "") + g.name).lineLimit(1)
                                 }
                                 .buttonStyle(RowButtonStyle(selected: g.id == model.group?.id))
+                                .focused($focus, equals: .group(g.id))
                             }
                         }
                         .padding(.horizontal, 10)
@@ -166,6 +171,7 @@ struct VodBrowserView: View {
                                 Button { open(item) } label: { PosterCard(item: item) }
                                     .buttonStyle(.borderless)
                                     .contextMenu { menu(item) }
+                                    .focused($focus, equals: .item(item.id))
                                     .onAppear { model.loadMoreIfNeeded(item) }
                             }
                         }
@@ -173,6 +179,10 @@ struct VodBrowserView: View {
                     }
                     .focusSection()
                 }
+            }
+            // Menu: grid → category list → Live TV (rather than the tab bar and then out of the app).
+            .onExitCommand {
+                if case .item = focus, let g = model.group { focus = .group(g.id) } else { goLive() }
             }
             .navigationDestination(for: Movie.self) { MovieDetailView(movie: $0) }
             .navigationDestination(for: Series.self) { SeriesDetailView(series: $0) }

@@ -9,12 +9,22 @@ private val ACCENTS: Map<Char, String> = buildMap {
     put("źżž", "z"); put("ß", "ss"); put("æ", "ae"); put("œ", "oe"); put("þ", "th")
 }
 
-/** Lowercase, accent-free, single-spaced text for LIKE searches. */
+/** Arabic and Persian spellings of the same letter, folded to the Persian form. */
+private val ARABIC: Map<Char, String> = mapOf('ي' to "ی", 'ى' to "ی", 'ك' to "ک", 'ة' to "ه", 'أ' to "ا", 'إ' to "ا", 'آ' to "ا")
+
+/** Arabic diacritics (harakat), superscript alef and tatweel: dropped, not turned into spaces. */
+private fun isArabicMark(ch: Char) = ch in '\u064B'..'\u065F' || ch == '\u0670' || ch == '\u0640'
+
+/**
+ * Lowercase, accent-free, single-spaced text for LIKE searches. Arabic and Persian letter
+ * variants are folded, so a name spelled with either keyboard matches the other.
+ */
 fun searchNorm(s: String): String {
     val sb = StringBuilder(s.length)
     var space = false
     for (ch in s.lowercase()) {
-        val mapped = ACCENTS[ch]
+        if (isArabicMark(ch)) continue
+        val mapped = ACCENTS[ch] ?: ARABIC[ch]
         when {
             mapped != null -> { sb.append(mapped); space = false }
             ch.isLetterOrDigit() -> { sb.append(ch); space = false }
