@@ -1,0 +1,133 @@
+# Builds the core, the Android TV app and the Apple TV app on every push to main and every pull request.
+# A tag such as v0.2.0 also publishes a GitHub release with the APK.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Core tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - run: ./gradlew :shared:jvmTest
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: core-test-reports
+          path: shared/build/reports/tests/
+
+  android:
+    name: Android TV
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      # Signs with the upload key when the UPLOAD_KEYSTORE (base64) and UPLOAD_PASSWORD secrets are set.
+      # Pull requests from forks don't get secrets, so their builds use the debug key.
+      - name: Restore the upload key
+        env:
+          UPLOAD_KEYSTORE: ${{ secrets.UPLOAD_KEYSTORE }}
+        run: |
+          if [ -n "$UPLOAD_KEYSTORE" ]; then
+            echo "$UPLOAD_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+            echo "UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          fi
+      - run: ./gradlew :androidApp:assembleRelease :androidApp:bundleRelease
+        env:
+          UPLOAD_PASSWORD: ${{ secrets.UPLOAD_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: androidApp/build/outputs/apk/release/androidApp-release.apk
+      # The bundle (AAB) is what Google Play takes.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: androidApp/build/outputs/bundle/release/androidApp-release.aab
+
+  tvos:
+    name: Apple TV
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: latest-stable
+      # Kotlin/Native downloads its compiler and the tvOS dependencies here.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+      - run: brew install xcodegen
+      - run: xcodegen generate
+        working-directory: tvosApp
+      # The Kotlin framework is built for arm64 only, so the simulator build is limited to arm64.
+      - name: Build for the simulator
+        working-directory: tvosApp
+        run: |
+          xcodebuild -project Tuner.xcodeproj -scheme Tuner -configuration Debug \
+            -destination 'generic/platform=tvOS Simulator' -derivedDataPath build/dd \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
+      # Unsigned until a paid signing team is set up; it checks that the device build compiles.
+      - name: Build for Apple TV
+        working-directory: tvosApp
+        run: |
+          xcodebuild -project Tuner.xcodeproj -scheme Tuner -configuration Release \
+            -destination 'generic/platform=tvOS' -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO build
+          cd build/dd/Build/Products/Release-appletvos && zip -qry "$GITHUB_WORKSPACE/Tuner-unsigned.zip" Tuner.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvos-app-unsigned
+          path: Tuner-unsigned.zip
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [core, android, tvos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mv androidApp-release.apk "IPTV-Enhanced-$GITHUB_REF_NAME.apk"
+          gh release create "$GITHUB_REF_NAME" "IPTV-Enhanced-$GITHUB_REF_NAME.apk" \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

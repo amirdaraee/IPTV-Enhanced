@@ -39,9 +39,11 @@ fun WelcomeScreen() {
     ) {
         Text("IPTV Enhanced", style = MaterialTheme.typography.displaySmall.copy(fontSize = MaterialTheme.typography.displaySmall.fontSize * 1.6f), color = Palette.Accent)
         Spacer(Modifier.height(8.dp))
-        Text("A free, open-source TV guide and player for your IPTV subscription.", style = MaterialTheme.typography.titleLarge)
+        Text("A free, open-source TV guide and player for the playlists you already have.", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
-        Dim("Works with M3U playlists, XMLTV guides and Xtream Codes accounts. Your data stays on this device.", maxLines = 2)
+        Dim("Works with M3U playlists, XMLTV guides and Xtream logins. Your data stays on this device.", maxLines = 2)
+        Spacer(Modifier.height(4.dp))
+        Dim("IPTV Enhanced provides no channels or content. Only add playlists you are authorised to use.", maxLines = 2)
         Spacer(Modifier.height(40.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             PrimaryButton("Add your playlist", onClick = { nav.push(Screen.EditSource(null)) }, modifier = Modifier.focusRequester(focus).width(260.dp))

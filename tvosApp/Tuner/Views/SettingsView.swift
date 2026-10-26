@@ -15,6 +15,9 @@ struct SettingsView: View {
     /// Mirrors `core.hasPin()`, which SwiftUI can't observe.
     @State private var hasPin = false
     @Environment(\.goLive) private var goLive
+    @State private var license: License?
+
+    struct License: Identifiable { let file: String; let title: String; var id: String { file } }
 
     struct EditTarget: Identifiable { let id: Int64? ; var key: String { "\(id ?? -1)" } }
     enum PinStep: Identifiable { case enter, confirm(String); var id: String { if case let .confirm(p) = self { return "c" + p }; return "e" } }
@@ -28,7 +31,7 @@ struct SettingsView: View {
                     Button { sourceMenu = s } label: { SourceRow(source: s, sync: app.syncStates.first { $0.sourceId == s.id }) }
                         .buttonStyle(RowButtonStyle())
                 }
-                row("Add playlist", "M3U or Xtream Codes") { protected { editing = EditTarget(id: nil) } }
+                row("Add playlist", "M3U playlist or Xtream login") { protected { editing = EditTarget(id: nil) } }
 
                 if let st = settings {
                     header("TV guide")
@@ -55,7 +58,11 @@ struct SettingsView: View {
                 row("Hidden groups", nil) { protected { Task { hiddenGroups = (try? await app.core.liveGroups(includeHidden: true))?.filter(\.hidden) ?? [] } } }
                 row("Hidden channels", nil) { protected { Task { hiddenChannels = (try? await app.core.hiddenChannels()) ?? [] } } }
                 header("About")
-                row("IPTV Enhanced \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")", "Free and open-source (GPL-3.0). IPTV Enhanced provides no content.") {}
+                row("IPTV Enhanced \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")", "Copyright © 2026 the IPTV Enhanced authors") {}
+                row("No content included", "Only add playlists you are authorised to use") {}
+                row("Licence", "GPL-3.0-or-later, with no warranty") { license = License(file: "GPL-3.0.txt", title: "Licence") }
+                row("Open-source components", nil) { license = License(file: "third-party.txt", title: "Open-source components") }
+                row("Source code", "github.com/amirdaraee/IPTV-Enhanced") {}
             }
             .padding(.horizontal, 120)
             .padding(.vertical, 60)
@@ -63,6 +70,7 @@ struct SettingsView: View {
         .onExitCommand { goLive() }
         .task { for await _ in app.changes(Changes.catalog | Changes.settings) { reload() } }
         .fullScreenCover(item: $editing) { SourceEditView(sourceId: $0.id) }
+        .fullScreenCover(item: $license) { LicenseView(file: $0.file, title: $0.title) }
         .confirmationDialog(sourceMenu?.name ?? "", isPresented: Binding(get: { sourceMenu != nil }, set: { if !$0 { sourceMenu = nil } }), presenting: sourceMenu) { s in
             Button("Refresh now") { app.core.refresh(sourceId: s.id) }
             // The PIN prompt waits for this dialog to close (see afterDialog).

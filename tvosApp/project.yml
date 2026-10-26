@@ -1,6 +1,6 @@
 name: Tuner
 options:
-  bundleIdPrefix: app.tuner
+  bundleIdPrefix: com.amirdaraee
   deploymentTarget:
     tvOS: "17.0"
 settings:
@@ -14,6 +14,11 @@ targets:
     platform: tvOS
     sources:
       - Tuner
+      # Settings → About shows these licence texts.
+      - path: ../licenses/GPL-3.0.txt
+        buildPhase: resources
+      - path: ../licenses/third-party.txt
+        buildPhase: resources
     info:
       path: Tuner/Info.plist
       properties:
@@ -22,11 +27,13 @@ targets:
         CFBundleVersion: "1"
         UILaunchScreen: {}
         UIRequiredDeviceCapabilities: [arm64]
+        # Only the system's HTTPS is used, which is exempt from export documentation.
+        ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.tuner.tv
+        PRODUCT_BUNDLE_IDENTIFIER: com.amirdaraee.iptv
         ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
         FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
         OTHER_LDFLAGS: [-framework, TunerCore, -lsqlite3]
@@ -48,7 +55,7 @@ targets:
       - target: Tuner
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.tuner.tv.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.amirdaraee.iptv.uitests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Tuner
 schemes:

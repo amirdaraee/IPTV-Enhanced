@@ -3,7 +3,7 @@
 Status: accepted · Date: 2026-10-24 · License: GPL-3.0-or-later
 
 ## 1. Purpose
-IPTV Enhanced is a free, open-source IPTV player for **Android TV / Google TV** and **Apple TV (tvOS)**. It plays content from playlists the user already has: M3U/M3U8 with XMLTV, and Xtream Codes accounts. It provides no content and no accounts, and sends no telemetry.
+IPTV Enhanced is a free, open-source IPTV player for **Android TV / Google TV** and **Apple TV (tvOS)**. It plays content from playlists the user already has: M3U/M3U8 with XMLTV, and Xtream logins (the player API). It provides no content and no accounts, and sends no telemetry.
 
 ### Goals
 1. Live TV first: the guide is home, zapping is instant, and the remote grammar never changes.

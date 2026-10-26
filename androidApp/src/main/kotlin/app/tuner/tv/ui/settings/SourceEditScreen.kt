@@ -156,7 +156,7 @@ fun SourceEditScreen(sourceId: Long?) {
             Dim("IPTV Enhanced plays content from your own provider. It doesn't include any channels.")
             Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                listOf(SourceType.XTREAM to "Xtream Codes login", SourceType.M3U to "M3U playlist URL").forEachIndexed { i, (t, label) ->
+                listOf(SourceType.XTREAM to "Xtream login (player API)", SourceType.M3U to "M3U playlist URL").forEachIndexed { i, (t, label) ->
                     FocusSurface(
                         onClick = { type = t },
                         color = if (type == t) Palette.AccentDim else Palette.Surface,

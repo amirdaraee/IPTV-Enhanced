@@ -4,14 +4,14 @@
 
 **A free, open-source IPTV player for Android TV and Apple TV.**
 
-IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M3U8 playlists with XMLTV guides, and Xtream Codes accounts. It ships no content, has no accounts, and collects no telemetry. Everything stays on the device.
+IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M3U8 playlists with XMLTV guides, and Xtream logins (the player API). It ships no content, has no accounts, and collects no telemetry. Everything stays on the device.
 
 > IPTV Enhanced is a player only. You are responsible for the content you load into it.
 
 ## Features (v0.1)
 
 **Sources**
-- Unlimited M3U/M3U8 playlists and Xtream Codes accounts.
+- Unlimited M3U/M3U8 playlists and Xtream logins.
 - gzip-aware streaming import that handles playlists of any size.
 - Custom User-Agent per source; `#EXTVLCOPT`, `#KODIPROP` and `url|Header=` headers are respected.
 - Automatic refresh on start once a source is older than its interval.
@@ -102,6 +102,26 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 cd tvosApp && xcodegen generate
 xcodebuild -project Tuner.xcodeproj -scheme Tuner -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation) (at 1080p)' build
 ```
+
+GitHub Actions (`.github/workflows/build.yml`) runs the core tests and builds both apps on every push to `main` and every pull request; each run keeps the APK and an unsigned Apple TV app as artifacts. Pushing a `v*` tag also publishes a release with the APK. Each run also keeps the Android app bundle (AAB) for Google Play.
+
+Release builds are signed with an upload key when one is configured, and with the debug key otherwise:
+- **Locally:** set `iptvUploadStoreFile` (the keystore path) and `iptvUploadPassword` in `~/.gradle/gradle.properties`. The key alias is `upload`.
+- **In CI:** set the `UPLOAD_KEYSTORE` secret (the keystore, base64-encoded) and the `UPLOAD_PASSWORD` secret.
+
+## Demo playlist
+
+[`docs/demo/playlist.m3u`](docs/demo/playlist.m3u) is a small playlist with a guide that anyone can use to try the app, including store reviewers. Add it as an M3U playlist with this URL:
+
+```
+https://raw.githubusercontent.com/amirdaraee/IPTV-Enhanced/main/docs/demo/playlist.m3u
+```
+
+It only contains content that may be shared:
+- Big Buck Bunny (2008) and Tears of Steel (2012), © Blender Foundation, CC BY 3.0 ([peach.blender.org](https://peach.blender.org), [mango.blender.org](https://mango.blender.org)), streamed from Mux's public test streams.
+- Apple's sample HLS streams.
+
+`python3 tools/demo/make_demo.py` regenerates the playlist and the guide. The guide runs for a year from its start date, so regenerate it before then.
 
 ## Testing with the fixture server
 
@@ -209,8 +229,12 @@ app icon and Top Shelf images from `tools/icons/render.swift`.
 
 On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu acts as Back. On Apple TV, Back from the group list goes to the tab bar; from the Movies and Series category lists and from Settings it goes to Live TV.
 
+## Privacy
+
+The app collects no data. See the [privacy policy](docs/privacy.md).
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
 
-All code in this repository was written for this project. The only third-party files are Gradle's standard wrapper scripts (`gradlew`, `gradlew.bat`, `gradle/wrapper`), which are Apache-2.0; libraries are fetched as build dependencies and are not vendored.
+All code in this repository was written for this project. The only third-party files are Gradle's standard wrapper scripts (`gradlew`, `gradlew.bat`, `gradle/wrapper`), which are Apache-2.0, and the licence texts in `licenses/`. Libraries are fetched as build dependencies and are not vendored. The apps show the licence and the notices for the libraries they include (`licenses/third-party.txt`) under Settings → About; update that file when a dependency changes.

@@ -78,6 +78,8 @@ fun SettingsScreen(focusRequester: FocusRequester) {
     var afterVerify by remember { mutableStateOf<(() -> Unit)?>(null) }
     var hiddenGroups by remember { mutableStateOf<List<Group>?>(null) }
     var hiddenChannels by remember { mutableStateOf<List<Channel>?>(null) }
+    /** Licence file and title shown full screen. */
+    var license by remember { mutableStateOf<Pair<String, String>?>(null) }
     var hasPin by remember { mutableStateOf(core.hasPin()) }
 
     DisposableEffect(Unit) {
@@ -110,7 +112,7 @@ fun SettingsScreen(focusRequester: FocusRequester) {
             SourceRow(s, syncStates[s.id], label = labels[s.id]) { sourceMenu = s }
         }
         item {
-            SettingRow("Add playlist", "M3U or Xtream Codes", Modifier.focusRequester(focusRequester)) { protected { nav.push(Screen.EditSource(null)) } }
+            SettingRow("Add playlist", "M3U playlist or Xtream login", Modifier.focusRequester(focusRequester)) { protected { nav.push(Screen.EditSource(null)) } }
         }
         item { Spacer(Modifier.height(16.dp)); SectionTitle("TV guide") }
         item {
@@ -176,9 +178,11 @@ fun SettingsScreen(focusRequester: FocusRequester) {
             }
         }
         item { Spacer(Modifier.height(16.dp)); SectionTitle("About") }
-        item {
-            SettingRow("IPTV Enhanced ${BuildConfig.VERSION_NAME}", "Free and open-source (GPL-3.0). IPTV Enhanced provides no content.") {}
-        }
+        item { SettingRow("IPTV Enhanced ${BuildConfig.VERSION_NAME}", "Copyright © 2026 the IPTV Enhanced authors") {} }
+        item { SettingRow("No content included", "Only add playlists you are authorised to use") {} }
+        item { SettingRow("Licence", "GPL-3.0-or-later, with no warranty") { license = "GPL-3.0.txt" to "Licence" } }
+        item { SettingRow("Open-source components", null) { license = "third-party.txt" to "Open-source components" } }
+        item { SettingRow("Source code", "github.com/amirdaraee/IPTV-Enhanced") {} }
     }
 
     LaunchedEffect(Unit) { sources = core.sources() }
@@ -221,6 +225,7 @@ fun SettingsScreen(focusRequester: FocusRequester) {
         }, onDismiss = { pinFlow = null }, errorText = "The PINs don't match, try again")
         null -> Unit
     }
+    license?.let { (file, title) -> LicenseDialog(file, title) { license = null } }
     hiddenGroups?.let { list ->
         val actions = list.map { g -> MenuAction(g.name, listOfNotNull(labels[g.sourceId], "Show").joinToString(" · ")) { scope.launch { core.setGroupHidden(g, false) } } }
             .ifEmpty { listOf(MenuAction("No hidden groups") {}) }

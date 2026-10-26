@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing docs are in [
 
 ## What this is
 
-**IPTV Enhanced**: a free, open-source (GPL-3.0-or-later) IPTV player for Android TV / Google TV / Fire TV and Apple TV. It plays the user's own M3U/XMLTV playlists and Xtream Codes accounts and ships no content. Internal code names still say *Tuner* (`app.tuner.tv`, `TunerCore`, `Tuner.xcodeproj`); keep them, because changing the app id would make existing installs lose their data.
+**IPTV Enhanced**: a free, open-source (GPL-3.0-or-later) IPTV player for Android TV / Google TV / Fire TV and Apple TV. It plays the user's own M3U/XMLTV playlists and Xtream logins and ships no content. The app id is `com.amirdaraee.iptv` on both platforms; changing it would make existing installs lose their data. Internal code names still say *Tuner* (the `app.tuner.*` Kotlin packages, `TunerCore`, `Tuner.xcodeproj`).
 
 ## Layout
 
@@ -34,6 +34,7 @@ Real Apple TV builds need `DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates` on
 - **tvOS storage.** On real hardware only Caches and tmp are writable, so the database lives in `Library/Caches/databases`; the simulator is more permissive, so storage changes must be checked on a device. The backup copy is in the Keychain (`KeychainBackup.swift`).
 - **TV input.** Everything must work with a D-pad remote. Act on an OK *release* only when the press started on the same element (see `okDown` in the guide, player and `TvTextField`); test Back on every screen you touch (it should close the innermost thing first).
 - **Suspend functions exposed to Swift** need `@Throws(Exception::class)`, or a Kotlin exception crashes the app.
+- **Store rules.** UI and docs say "Xtream login", not "Xtream Codes"; never name real channels, broadcasters or other apps (that includes the fixture server's made-up names); demo content must be freely shareable (`docs/demo/`). A new runtime dependency needs an entry in `licenses/third-party.txt`, which Settings → About shows.
 - Match the surrounding style: short KDoc explaining *why*, no speculative abstractions.
 
 ## Credentials

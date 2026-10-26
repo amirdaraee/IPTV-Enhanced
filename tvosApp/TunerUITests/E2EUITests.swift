@@ -1328,4 +1328,22 @@ final class E2EUITests: XCTestCase {
         if textContaining("Parental PIN").exists { enterPin("1111") }
         crashCheck("playlist PIN")
     }
+
+    func test18AboutLicences() {
+        launch(demo)
+        openSettings()
+        check(moveTo("Licence", with: .down, max: 40, wait: 0.4), "Licence row in About")
+        press(.select, wait: 2)
+        shot("licence")
+        check(textContaining("GNU GENERAL PUBLIC LICENSE").exists, "GPL text shown")
+        press(.down, 5, wait: 0.4)
+        press(.menu, wait: 1.5)
+        check(focusIs("Licence"), "Menu returns to the Licence row (focus \(focused()))")
+        press(.down, wait: 0.6)
+        press(.select, wait: 2)
+        shot("components")
+        check(textContaining("Apache License").exists, "Apache text shown")
+        press(.menu, wait: 1.5)
+        check(focusIs("Open-source components"), "Menu returns to the components row (focus \(focused()))")
+    }
 }

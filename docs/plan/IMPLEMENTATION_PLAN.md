@@ -81,7 +81,7 @@ Toolchain: Kotlin 2.4.21, AGP 9.4.1, Gradle 9.8.2, JDK 17, compileSdk 37, Xcode 
 - [ ] Phone-based setup (QR code + LAN web form)
 - [x] 4.5 User-data backup: `UserDataBackup` snapshot (playlists, favorites, group prefs, progress, recents, settings) kept current by the core and restored into an empty database. tvOS: Keychain (the database lives in Caches, which tvOS may purge). Android: `files/user-data.json`, the only file Android backup to Google includes (Fire TV has no Google backup)
 - [ ] **iCloud on tvOS (needs the paid Apple Developer Program; free teams can't enable iCloud):**
-  1. Enable the iCloud capability with *Key-value storage* for `app.tuner.tv` (entitlement `com.apple.developer.ubiquity-kvstore-identifier`) and set `DEVELOPMENT_TEAM` in `project.yml`.
+  1. Enable the iCloud capability with *Key-value storage* for `com.amirdaraee.iptv` (entitlement `com.apple.developer.ubiquity-kvstore-identifier`) and set `DEVELOPMENT_TEAM` in `project.yml`.
   2. Add `CloudBackup: UserDataBackup` in Swift wrapping `NSUbiquitousKeyValueStore`: `save` writes the snapshot to one key (limit 1 MB per store, 1 MB per value; the snapshot is ~10–100 KB) and keeps the Keychain copy too; `load` prefers whichever copy is newer (add a `savedAt` field to `UserSnapshot`, format version 2).
   3. Observe `NSUbiquitousKeyValueStore.didChangeExternallyNotification` so a second Apple TV picks up favorites added on the first; merging needs a core `importUserData(json)` that upserts prefs into an existing database (today's restore only fills an empty one).
   4. Consider moving passwords out of the iCloud copy (Keychain only) unless iCloud Keychain sync is wanted.

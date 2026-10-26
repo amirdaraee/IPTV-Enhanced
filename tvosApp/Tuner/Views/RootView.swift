@@ -85,8 +85,10 @@ struct WelcomeView: View {
                 .ignoresSafeArea()
             VStack(alignment: .leading, spacing: 20) {
                 Text("IPTV Enhanced").font(.system(size: 96, weight: .bold)).foregroundStyle(Palette.accent)
-                Text("A free, open-source TV guide and player for your IPTV subscription.").font(.title2.weight(.semibold))
-                Text("Works with M3U playlists, XMLTV guides and Xtream Codes accounts. Your data stays on this device.")
+                Text("A free, open-source TV guide and player for the playlists you already have.").font(.title2.weight(.semibold))
+                Text("Works with M3U playlists, XMLTV guides and Xtream logins. Your data stays on this device.")
+                    .foregroundStyle(Palette.textDim)
+                Text("IPTV Enhanced provides no channels or content. Only add playlists you are authorised to use.")
                     .foregroundStyle(Palette.textDim)
                 Button("Add your playlist") { adding = true }
                     .padding(.top, 30)

@@ -8,11 +8,23 @@ android {
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "app.tuner.tv"
+        applicationId = "com.amirdaraee.iptv"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.1.0"
+    }
+
+    // Release builds are signed with the upload key named in ~/.gradle/gradle.properties (or the CI's
+    // environment, see README); without one they fall back to the debug key.
+    val uploadStore = setting("iptvUploadStoreFile", "UPLOAD_STORE_FILE")
+    if (uploadStore != null) {
+        signingConfigs.create("upload") {
+            storeFile = file(uploadStore)
+            storePassword = setting("iptvUploadPassword", "UPLOAD_PASSWORD")
+            keyAlias = "upload"
+            keyPassword = storePassword
+        }
     }
 
     buildTypes {
@@ -20,7 +32,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("upload") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -28,6 +40,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // Settings → About shows these licence texts.
+    sourceSets.getByName("main").assets.directories.add("../licenses")
 
     buildFeatures {
         compose = true
@@ -60,3 +75,6 @@ dependencies {
     implementation(libs.coroutines.android)
     debugImplementation(libs.compose.ui.tooling)
 }
+
+fun setting(property: String, env: String): String? =
+    providers.gradleProperty(property).orElse(providers.environmentVariable(env)).orNull

@@ -6,7 +6,7 @@ Legend: **P0** = v1.0 (this build), **P1** = v1.x, **P2** = later. Platform: A =
 | ID | Feature | Pri |
 |----|---------|-----|
 | SRC-1 | Add an M3U/M3U8 playlist by URL (gzip-aware, any size, streamed) | P0 |
-| SRC-2 | Add an Xtream Codes account (server, username, password) with account status and expiry | P0 |
+| SRC-2 | Add an Xtream login (server, username, password) with account status and expiry | P0 |
 | SRC-3 | Unlimited sources, each enabled/disabled independently, all free | P0 |
 | SRC-4 | Refresh on app start when stale, plus a per-source interval and manual refresh | P0 |
 | SRC-5 | Per-source custom User-Agent; honour `#EXTVLCOPT`, `#KODIPROP` and `url\|Header=` | P0 |

@@ -35,7 +35,7 @@ struct SourceEditView: View {
                     Text("IPTV Enhanced plays content from your own provider. It doesn't include any channels.")
                         .foregroundStyle(Palette.textDim)
                     Picker("Type", selection: $type) {
-                        Text("Xtream Codes login").tag(SourceType.xtream)
+                        Text("Xtream login (player API)").tag(SourceType.xtream)
                         Text("M3U playlist URL").tag(SourceType.m3u)
                     }
                     .pickerStyle(.segmented)
