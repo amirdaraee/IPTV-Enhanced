@@ -40,7 +40,6 @@
         <img src="store/android-tv/01-guide.jpg" width="1920" height="1080"
              alt="The TV guide: a list of channel groups, a grid of programmes with a red line at the current time, and a live preview of the selected channel.">
       </div>
-      <div class="now" aria-hidden="true"><span id="now">Now</span></div>
     </div>
 
     <section id="features" class="wrap">
@@ -97,25 +96,6 @@
   </footer>
 
   <script>
-    // The hero's now-line: the visitor's own time, joined to the line in the screenshot.
-    (function () {
-      const label = document.getElementById("now");
-      const tick = () => { label.textContent = "Now " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
-      tick();
-      setInterval(tick, 15000);
-
-      const hero = document.querySelector(".hero"), screen = document.querySelector(".screen"), line = document.querySelector(".now");
-      const place = () => {
-        const h = hero.getBoundingClientRect(), s = screen.getBoundingClientRect();
-        line.style.left = (s.left - h.left + s.width * 0.5768) + "px";
-        line.style.top = "46px";
-        line.style.height = Math.max(0, s.top - h.top + s.height * 0.419 - 46) + "px";
-      };
-      place();
-      addEventListener("resize", place);
-      document.querySelector(".screen img").addEventListener("load", place);
-    })();
-
     // Gallery: one large screen, a strip of the others, and a platform switch.
     (function () {
       const shots = [
