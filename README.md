@@ -2,7 +2,7 @@
 
 <img src="docs/brand/banner.png" alt="IPTV Enhanced" width="480">
 
-**A free, open-source IPTV player for Android TV and Apple TV.**
+**A free, open-source IPTV player for Android TV and Apple TV.** · [Website](https://amirdaraee.com/IPTV-Enhanced/)
 
 IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M3U8 playlists with XMLTV guides, and Xtream logins (the player API). It ships no content, has no accounts, and collects no telemetry. Everything stays on the device.
 

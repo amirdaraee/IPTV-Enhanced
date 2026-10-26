@@ -45,7 +45,7 @@ The screenshots show the fixture server's made-up showcase channels; see [develo
 
 **Category:** Video Players & Editors (Play) · Entertainment (App Store)
 
-**Privacy policy URL:** https://amirdaraee.github.io/IPTV-Enhanced/privacy.html
+**Privacy policy URL:** https://amirdaraee.com/IPTV-Enhanced/privacy.html
 
 **Support:** apps@amirdaraee.com
 
