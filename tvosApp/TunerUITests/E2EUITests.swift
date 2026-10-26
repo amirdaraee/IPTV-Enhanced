@@ -1346,4 +1346,44 @@ final class E2EUITests: XCTestCase {
         press(.menu, wait: 1.5)
         check(focusIs("Open-source components"), "Menu returns to the components row (focus \(focused()))")
     }
+
+    /// App Store screenshots from the fixture server's showcase account (start it with --showcase).
+    /// Runs only when STORE_SHOTS names an output folder; the shots are named for the listing.
+    func test19StoreScreenshots() throws {
+        let out = ProcessInfo.processInfo.environment["STORE_SHOTS"].map { URL(fileURLWithPath: $0) }
+        try XCTSkipUnless(out != nil, "STORE_SHOTS not set")
+        func store(_ name: String) {
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: out!.appendingPathComponent("\(name).png"))
+            log("STORE \(name) focus=[\(focused())]")
+        }
+        launch(["-resetData", "-demoXtream", "http://localhost:8900", "-demoUser", "showcase", "-demoName", "My TV"], wait: 20)
+        // Guide: All channels, focus on a documentary programme so the preview plays.
+        moveTo("All channels", with: .up)
+        press(.select, wait: 2)
+        press(.down, 12, wait: 0.5)
+        press(.right, wait: 1)
+        press(.select, wait: 8)
+        store("01-guide")
+        // Fullscreen with the info bar (before it times out), then the channel list.
+        press(.left, wait: 1)
+        press(.select, wait: 2.5)
+        store("02-player")
+        press(.select, wait: 2.5)
+        store("03-channels")
+        press(.menu, wait: 1.5)
+        press(.menu, wait: 2)
+        goToTab("Movies")
+        press(.down, wait: 2)
+        press(.left, wait: 1)
+        moveTo("Recently added", with: .up, max: 4)
+        press(.select, wait: 2)
+        press(.right, wait: 3)
+        store("04-movies")
+        press(.select, wait: 4)
+        store("05-movie")
+        goToTab("Series")
+        press(.down, wait: 3)
+        press(.select, wait: 4)
+        store("06-series")
+    }
 }

@@ -57,4 +57,7 @@ shelf "Top Shelf Image Wide" 2320 720
 mkdir -p $ROOT/docs/brand
 "$BIN" banner 1280 720 $ROOT/docs/brand/banner.png
 "$BIN" square 512 512 $ROOT/docs/brand/icon.png
+# Google Play feature graphic.
+mkdir -p $ROOT/docs/store
+"$BIN" banner 1024 500 $ROOT/docs/store/feature-graphic.png
 echo "icons generated"

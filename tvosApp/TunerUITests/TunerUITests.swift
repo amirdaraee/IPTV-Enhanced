@@ -208,7 +208,7 @@ final class TunerUITests: XCTestCase {
         shot("settings-parental")
     }
 
-    /// Sets up a real account and adds its news channels to Favorites, then opens Favorites.
+    /// Sets up a real account and adds the channels matching TEST_RUNNER_LIVE_SEARCH (default "news") to Favorites.
     /// Skipped unless LIVE_XTREAM="server|user|pass" is passed (TEST_RUNNER_LIVE_XTREAM via xcodebuild),
     /// so credentials never live in the repo.
     func testLiveAccountFavorites() throws {
@@ -227,11 +227,12 @@ final class TunerUITests: XCTestCase {
         press(.menu, wait: 1)  // group list → tab bar
         press(.right, 3, wait: 1.5)
         press(.down, wait: 1.5)
-        type("news")
+        let query = ProcessInfo.processInfo.environment["LIVE_SEARCH"] ?? "news"
+        type(query)
         Thread.sleep(forTimeInterval: 1)
         let addAll = app.buttons["Add all to Favorites"]
         for _ in 0..<40 where !addAll.exists { Thread.sleep(forTimeInterval: 5) }
-        XCTAssertTrue(addAll.exists, "no channel results for 'news'")
+        XCTAssertTrue(addAll.exists, "no channel results for '\(query)'")
         press(.down, wait: 1)
         for _ in 0..<6 where !addAll.hasFocus { press(.down, wait: 1) }
         for _ in 0..<6 where !addAll.hasFocus { press(.left, wait: 0.6) }

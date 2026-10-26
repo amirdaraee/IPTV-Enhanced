@@ -13,11 +13,14 @@ Android emulator can use http://10.0.2.2:8900 and the tvOS simulator http://loca
   /xmltv.php                    same XMLTV, uncompressed
   username "big"                Xtream account at large-provider scale (21.7k channels, 103k movies,
                                 25k series, 200k programmes) for performance testing
+  username "showcase"           made-up channels, films and series with artwork, for screenshots
+                                (run make_showcase_art.py once, then start the server with --showcase)
   /live/<u>/<p>/<id>.m3u8|.ts   live channel as sliding-window HLS or continuous MPEG-TS
   /movie/<u>/<p>/<id>.mp4       VOD file (supports Range)
   /series/<u>/<p>/<id>.mp4      episode file
   /timeshift/<u>/<p>/<min>/<start>/<id>.ts   archive (serves the loop once)
   /hls/<n>/live.m3u8            real-time live HLS produced by ffmpeg from media/ch<n>.mp4
+  /art/<path>                   showcase artwork from media/showcase
 """
 import argparse
 import gzip
@@ -34,6 +37,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+import showcase
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 MEDIA = os.path.join(ROOT, "media")
@@ -180,7 +185,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/epg.xml.gz":
                 return self.send(gzip.compress(xmltv_bytes()), "application/gzip")
             if path == "/xmltv.php":
-                return self.send(big("xmltv") if q.get("username") == "big" else xmltv_bytes(), "application/xml")
+                user = q.get("username")
+                body = big("xmltv") if user == "big" else showcase.xmltv() if user == "showcase" else xmltv_bytes()
+                return self.send(body, "application/xml")
             if path == "/player_api.php":
                 return self.xtream(q)
             m = re.match(r"^/hls/(\d+)/live\.m3u8$", path)
@@ -189,17 +196,24 @@ class Handler(BaseHTTPRequestHandler):
             m = re.match(r"^/hls/(\d+)/(live\d+\.ts)$", path)
             if m:
                 return self.file(os.path.join(LIVE, f"ch{m.group(1)}", m.group(2)), "video/mp2t")
+            m = re.match(r"^/art/([\w/.-]+\.(png|jpg))$", path)
+            if m and ".." not in m.group(1):
+                return self.file(os.path.join(showcase.ART, m.group(1)), "image/png" if m.group(2) == "png" else "image/jpeg")
             m = re.match(r"^/live/[^/]+/[^/]+/(\d+)\.(m3u8|ts)$", path)
             if m:
                 ch = next((c for c in CHANNELS if c["id"] == int(m.group(1))), None)
+                if showcase.variant(int(m.group(1))) is not None:
+                    ch = {"variant": showcase.variant(int(m.group(1)))}
                 if not ch:
                     # Large-provider channels share the four test streams.
                     ch = {"variant": int(m.group(1)) % 4}
                 if m.group(2) == "m3u8":
                     return self.live_playlist(ch["variant"])
                 return self.live_ts(ch["variant"])
-            if re.match(r"^/(movie|series)/[^/]+/[^/]+/\d+\.\w+$", path):
-                return self.file(os.path.join(MEDIA, "movie.mp4"), "video/mp4")
+            m = re.match(r"^/(movie|series)/([^/]+)/[^/]+/(\d+)\.\w+$", path)
+            if m:
+                fp = showcase.video_file(int(m.group(3))) if m.group(2) == "showcase" else os.path.join(MEDIA, "movie.mp4")
+                return self.file(fp, "video/mp4")
             m = re.match(r"^/timeshift/[^/]+/[^/]+/\d+/[^/]+/(\d+)\.(ts|m3u8)$", path)
             if m:
                 ch = next((c for c in CHANNELS if c["id"] == int(m.group(1))), CHANNELS[0])
@@ -244,6 +258,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def live_ts(self, variant):
         segs = segments(variant)
+        if not segs:
+            return self.live_ts_relay(variant)
         self.send_response(200)
         self.send_header("Content-Type", "video/mp2t")
         self.send_header("Connection", "close")
@@ -261,6 +277,28 @@ class Handler(BaseHTTPRequestHandler):
             ahead = sent * SEG_DUR - (time.time() - started)
             if ahead > 2 * SEG_DUR:
                 time.sleep(ahead - 2 * SEG_DUR)
+
+    def live_ts_relay(self, variant):
+        """Continuous MPEG-TS for channels with no pre-generated loop (the showcase): relays the live
+        encoder's HLS segments as they are written."""
+        d = os.path.join(LIVE, f"ch{variant}")
+        names = lambda: sorted(f for f in os.listdir(d) if f.endswith(".ts")) if os.path.isdir(d) else []
+        if not names():
+            return self.send("live stream not running", "text/plain", 503)
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp2t")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        # The newest segment may still be being written: always stay one behind it.
+        last = names()[-3] if len(names()) > 2 else ""
+        while True:
+            for name in names()[:-1]:
+                if name > last:
+                    with open(os.path.join(d, name), "rb") as f:
+                        self.wfile.write(f.read())
+                    self.wfile.flush()
+                    last = name
+            time.sleep(0.5)
 
     def archive_hls(self, variant):
         out = ["#EXTM3U", "#EXT-X-VERSION:3", f"#EXT-X-TARGETDURATION:{int(SEG_DUR)}", "#EXT-X-PLAYLIST-TYPE:VOD", "#EXT-X-MEDIA-SEQUENCE:0"]
@@ -315,6 +353,8 @@ class Handler(BaseHTTPRequestHandler):
         action = q.get("action")
         if q.get("username") == "big" and action not in (None, "get_vod_info", "get_series_info", "get_short_epg"):
             return self.send(big(action), "application/json")
+        if q.get("username") == "showcase" and action is not None:
+            return j(showcase.xtream(action, q, self.base))
         if action is None:
             return j({
                 "user_info": {"username": q.get("username"), "auth": 1, "status": "Active", "exp_date": str(int(time.time()) + 86400 * 90),
@@ -368,7 +408,7 @@ LIVE_SOURCES = [
 ]
 
 
-def start_live_encoders(no_audio=False):
+def start_live_encoders(no_audio=False, with_showcase=False):
     """One real-time ffmpeg encoder per test channel writing a rolling live HLS window.
     Encoding live (rather than looping a file) gives continuous, monotonic timestamps,
     which AVPlayer requires."""
@@ -377,19 +417,29 @@ def start_live_encoders(no_audio=False):
         return
     shutil.rmtree(LIVE, ignore_errors=True)
     procs = []
-    for n, (video, freq) in enumerate(LIVE_SOURCES):
-        out = os.path.join(LIVE, f"ch{n}")
-        os.makedirs(out, exist_ok=True)
+    sources = []
+    for video, freq in LIVE_SOURCES:
         # The realtime/arealtime filters pace the generators to wall-clock speed.
         inputs = ["-f", "lavfi", "-i", f"{video},realtime"]
-        audio = ["-an"]
         if freq and not no_audio:
             inputs += ["-f", "lavfi", "-i", f"sine=frequency={freq}:sample_rate=48000,arealtime"]
-            audio = ["-c:a", "aac", "-b:a", "64k", "-ac", "2"]
+        sources.append((inputs, bool(freq) and not no_audio, "800k"))
+    if with_showcase:
+        # Variants 5.. loop the showcase landscapes (showcase.FIRST_VARIANT), read at real-time speed.
+        for pal in showcase.PALETTES:
+            fp = os.path.join(showcase.ART, f"{pal}.mp4")
+            if not os.path.exists(fp):
+                print("Showcase art missing; run make_showcase_art.py first", file=sys.stderr)
+                break
+            sources.append((["-stream_loop", "-1", "-re", "-i", fp] + (["-an"] if no_audio else []), not no_audio, "2500k"))
+    for n, (inputs, has_audio, bitrate) in enumerate(sources):
+        out = os.path.join(LIVE, f"ch{n}")
+        os.makedirs(out, exist_ok=True)
+        audio = ["-c:a", "aac", "-b:a", "64k", "-ac", "2"] if has_audio else ["-an"]
         procs.append(subprocess.Popen([
             "ffmpeg", "-hide_banner", "-loglevel", "error", *inputs,
             "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
-            "-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-b:v", "800k", *audio,
+            "-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-b:v", bitrate, *audio,
             "-f", "hls", "-hls_time", "2", "-hls_list_size", "8",
             "-hls_flags", "delete_segments+omit_endlist+program_date_time",
             "-hls_segment_filename", os.path.join(out, "live%05d.ts"), os.path.join(out, "live.m3u8"),
@@ -416,10 +466,11 @@ def main():
     ap.add_argument("--port", type=int, default=8900)
     ap.add_argument("--no-audio", action="store_true",
                     help="encode live channels without audio (for headless simulators with no audio device)")
+    ap.add_argument("--showcase", action="store_true", help="also stream the showcase channels (username \"showcase\")")
     args = ap.parse_args()
     if not segments(0):
         print("Media not generated; run tools/fixture-server/generate_media.sh first", file=sys.stderr)
-    start_live_encoders(args.no_audio)
+    start_live_encoders(args.no_audio, args.showcase)
     srv = DualStackServer(("::", args.port), Handler)
     srv.daemon_threads = True
     print(f"Tuner fixture server on http://localhost:{args.port}  (Android emulator: http://10.0.2.2:{args.port})")

@@ -70,16 +70,19 @@ final class ImagePipeline: @unchecked Sendable {
 }
 
 /// Remote image drawn from `ImagePipeline`; shows nothing until loaded (callers draw a placeholder behind it).
-struct CachedImage: View {
+struct CachedImage<Placeholder: View>: View {
     let url: URL
     let maxPixels: Int
     let contentMode: ContentMode
+    /// Shown until the image has loaded, and when it fails (transparent logos must not show it through).
+    let placeholder: Placeholder
     @State private var image: UIImage?
 
-    init(url: URL, maxPixels: Int, contentMode: ContentMode) {
+    init(url: URL, maxPixels: Int, contentMode: ContentMode, @ViewBuilder placeholder: () -> Placeholder) {
         self.url = url
         self.maxPixels = maxPixels
         self.contentMode = contentMode
+        self.placeholder = placeholder()
         // A memory hit renders in the first frame, with no placeholder flash while scrolling.
         _image = State(initialValue: ImagePipeline.shared.cached(url, maxPixels: maxPixels))
     }
@@ -88,6 +91,8 @@ struct CachedImage: View {
         ZStack {
             if let image {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else {
+                placeholder
             }
         }
         .task(id: url) {
@@ -95,5 +100,11 @@ struct CachedImage: View {
             image = ImagePipeline.shared.cached(url, maxPixels: maxPixels)
             if image == nil { image = await ImagePipeline.shared.load(url, maxPixels: maxPixels) }
         }
+    }
+}
+
+extension CachedImage where Placeholder == EmptyView {
+    init(url: URL, maxPixels: Int, contentMode: ContentMode) {
+        self.init(url: url, maxPixels: maxPixels, contentMode: contentMode) { EmptyView() }
     }
 }

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for coding agents working in this repository. User-facing docs are in [README.md](README.md); the product spec and plan are in [docs/spec/SPEC.md](docs/spec/SPEC.md) and [docs/plan/IMPLEMENTATION_PLAN.md](docs/plan/IMPLEMENTATION_PLAN.md).
+Guidance for coding agents working in this repository. User-facing docs are in [README.md](README.md), developer docs in [docs/development.md](docs/development.md); the product spec and plan are in [docs/spec/SPEC.md](docs/spec/SPEC.md) and [docs/plan/IMPLEMENTATION_PLAN.md](docs/plan/IMPLEMENTATION_PLAN.md).
 
 ## What this is
 
@@ -11,7 +11,7 @@ Guidance for coding agents working in this repository. User-facing docs are in [
 - `shared/`: Kotlin Multiplatform core (parsers, Xtream client, SQLDelight database, sync, EPG import, user-data backup). The only API the apps use is the `TunerCore` facade (`Tuner` in Swift).
 - `androidApp/`: Compose for TV + Media3.
 - `tvosApp/`: SwiftUI; `project.yml` → `xcodegen generate` → `Tuner.xcodeproj`. A build phase compiles the Kotlin framework through Gradle.
-- `tools/fixture-server/`: local M3U/XMLTV/Xtream/HLS test server (`python3 tools/fixture-server/server.py`, port 8900; username `big` is a 21.7k-channel account).
+- `tools/fixture-server/`: local M3U/XMLTV/Xtream/HLS test server (`python3 tools/fixture-server/server.py`, port 8900; username `big` is a 21.7k-channel account; `showcase` is the made-up catalog for store screenshots, see docs/development.md).
 - `tools/icons/`: `render.swift` draws the logo; `generate.sh` regenerates every icon, banner and `docs/brand/` image.
 
 ## Commands
@@ -34,7 +34,7 @@ Real Apple TV builds need `DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates` on
 - **tvOS storage.** On real hardware only Caches and tmp are writable, so the database lives in `Library/Caches/databases`; the simulator is more permissive, so storage changes must be checked on a device. The backup copy is in the Keychain (`KeychainBackup.swift`).
 - **TV input.** Everything must work with a D-pad remote. Act on an OK *release* only when the press started on the same element (see `okDown` in the guide, player and `TvTextField`); test Back on every screen you touch (it should close the innermost thing first).
 - **Suspend functions exposed to Swift** need `@Throws(Exception::class)`, or a Kotlin exception crashes the app.
-- **Store rules.** UI and docs say "Xtream login", not "Xtream Codes"; never name real channels, broadcasters or other apps (that includes the fixture server's made-up names); demo content must be freely shareable (`docs/demo/`). A new runtime dependency needs an entry in `licenses/third-party.txt`, which Settings → About shows.
+- **Store rules.** UI and docs say "Xtream login", not "Xtream Codes"; never name real channels, broadcasters or other apps (that includes the fixture server's made-up names); demo content must be freely shareable (`docs/demo/`), and screenshots use only the showcase account's invented names and generated art. A new runtime dependency needs an entry in `licenses/third-party.txt`, which Settings → About shows.
 - Match the surrounding style: short KDoc explaining *why*, no speculative abstractions.
 
 ## Credentials

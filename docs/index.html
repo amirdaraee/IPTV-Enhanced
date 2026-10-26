@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPTV Enhanced</title>
+  <meta name="description" content="A free, open-source TV guide and player for your own M3U playlists and Xtream logins, on Android TV, Google TV, Fire TV and Apple TV.">
+  <meta name="theme-color" content="#0b1322">
+  <meta property="og:title" content="IPTV Enhanced">
+  <meta property="og:description" content="A TV guide for the playlists you already have. Free and open source, for Android TV and Apple TV.">
+  <meta property="og:image" content="https://amirdaraee.github.io/IPTV-Enhanced/store/android-tv/01-guide.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="brand/icon.png">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+  <header class="wrap top">
+    <a class="brand" href="./"><img src="brand/icon.png" alt="">IPTV Enhanced</a>
+    <nav aria-label="Site">
+      <a href="#features">Features</a>
+      <a href="#screens">Screenshots</a>
+      <a href="https://github.com/amirdaraee/IPTV-Enhanced">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="wrap hero">
+      <h1>A TV guide for the playlists you already have.</h1>
+      <p class="lede">Free and open source, for Android TV, Google TV, Fire TV and Apple TV. Add your M3U playlist or Xtream login and browse your channels in a real TV guide, made for the remote.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/amirdaraee/IPTV-Enhanced/releases">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+          Download for Android TV
+        </a>
+        <a class="button quiet" href="https://github.com/amirdaraee/IPTV-Enhanced">View the source</a>
+      </div>
+      <p class="soon">Coming soon to Google Play, the Amazon Appstore and the App Store.</p>
+
+      <div class="screen">
+        <img src="store/android-tv/01-guide.jpg" width="1920" height="1080"
+             alt="The TV guide: a list of channel groups, a grid of programmes with a red line at the current time, and a live preview of the selected channel.">
+      </div>
+      <div class="now" aria-hidden="true"><span id="now">Now</span></div>
+    </div>
+
+    <section id="features" class="wrap">
+      <h2>Made for the remote</h2>
+      <p class="intro">Everything works with the arrow keys and OK, and Back always closes the innermost thing first.</p>
+      <ul class="features">
+        <li><h3>The guide comes first</h3><p>It opens on a full programme grid with a live preview, so you see what's on before you switch.</p></li>
+        <li><h3>Catch-up</h3><p>Go back to earlier programmes on channels that offer it, straight from the guide.</p></li>
+        <li><h3>Movies and series</h3><p>Pick up where you stopped, with the next episode ready when one ends.</p></li>
+        <li><h3>One search</h3><p>Find channels, programmes on air, movies and series from the same box.</p></li>
+        <li><h3>Big playlists, no lag</h3><p>Tens of thousands of channels and guides over 100 MB stay smooth.</p></li>
+        <li><h3>Nothing leaves your TV</h3><p>No accounts, ads or tracking. Your playlists and settings stay on the device.</p></li>
+      </ul>
+    </section>
+
+    <section id="screens" class="wrap">
+      <h2>On your TV</h2>
+      <div class="platforms" role="group" aria-label="Platform">
+        <button type="button" data-platform="android-tv" aria-pressed="true">Android TV</button>
+        <button type="button" data-platform="apple-tv" aria-pressed="false">Apple TV</button>
+      </div>
+      <figure class="viewer" style="margin:0">
+        <img id="shot" src="store/android-tv/02-player.jpg" width="1920" height="1080" alt="">
+        <figcaption id="caption"></figcaption>
+      </figure>
+      <ul class="strip" id="strip"></ul>
+    </section>
+
+    <section class="wrap byo">
+      <div>
+        <h2>Bring your own playlist</h2>
+        <p>IPTV Enhanced comes with no channels. It plays the playlists and logins your provider gives you, and you should only add ones you're authorised to use.</p>
+        <p>The channels in these screenshots are made up for the demo.</p>
+      </div>
+      <div class="demo">
+        <p>Want to try it first? Add this demo playlist as an M3U URL:</p>
+        <div class="url">
+          <code id="demo-url">https://raw.githubusercontent.com/amirdaraee/IPTV-Enhanced/main/docs/demo/playlist.m3u</code>
+          <button type="button" id="copy">Copy</button>
+        </div>
+        <small>Big Buck Bunny and Tears of Steel, © Blender Foundation, CC BY 3.0, and Apple's sample streams, with a guide.</small>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <span>© 2026 the IPTV Enhanced authors. Licensed under GPL-3.0.</span>
+    <nav aria-label="Footer">
+      <a href="privacy.html">Privacy policy</a>
+      <a href="https://github.com/amirdaraee/IPTV-Enhanced">Source code</a>
+      <a href="https://github.com/amirdaraee/IPTV-Enhanced/issues">Report a bug</a>
+      <a href="mailto:apps@amirdaraee.com">Contact</a>
+    </nav>
+  </footer>
+
+  <script>
+    // The hero's now-line: the visitor's own time, joined to the line in the screenshot.
+    (function () {
+      const label = document.getElementById("now");
+      const tick = () => { label.textContent = "Now " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
+      tick();
+      setInterval(tick, 15000);
+
+      const hero = document.querySelector(".hero"), screen = document.querySelector(".screen"), line = document.querySelector(".now");
+      const place = () => {
+        const h = hero.getBoundingClientRect(), s = screen.getBoundingClientRect();
+        line.style.left = (s.left - h.left + s.width * 0.5768) + "px";
+        line.style.top = "46px";
+        line.style.height = Math.max(0, s.top - h.top + s.height * 0.419 - 46) + "px";
+      };
+      place();
+      addEventListener("resize", place);
+      document.querySelector(".screen img").addEventListener("load", place);
+    })();
+
+    // Gallery: one large screen, a strip of the others, and a platform switch.
+    (function () {
+      const shots = [
+        ["01-guide", "The guide, with a live preview of the selected channel."],
+        ["02-player", "Fullscreen, with the info bar showing what's on now and next."],
+        ["03-channels", "The channel list, over the picture, while you watch."],
+        ["04-movies", "Movies, by category."],
+        ["05-movie", "A film's details, with Play and Favorite."],
+        ["06-series", "A series, with its seasons and episodes."],
+      ];
+      let platform = "android-tv", current = 1;
+      const img = document.getElementById("shot"), caption = document.getElementById("caption"), strip = document.getElementById("strip");
+      const src = (name) => `store/${platform}/${name}.jpg`;
+
+      function show(i) {
+        current = i;
+        img.src = src(shots[i][0]);
+        img.alt = shots[i][1];
+        caption.textContent = shots[i][1];
+        strip.querySelectorAll("button").forEach((b, j) => b.setAttribute("aria-current", j === i ? "true" : "false"));
+      }
+      function build() {
+        strip.innerHTML = "";
+        shots.forEach(([name, text], i) => {
+          const li = document.createElement("li"), b = document.createElement("button"), t = document.createElement("img");
+          b.type = "button";
+          b.setAttribute("aria-label", text);
+          t.src = src(name); t.alt = ""; t.loading = "lazy"; t.width = 320; t.height = 180;
+          b.append(t);
+          b.addEventListener("click", () => show(i));
+          li.append(b);
+          strip.append(li);
+        });
+        show(current);
+      }
+      document.querySelectorAll(".platforms button").forEach((b) => b.addEventListener("click", () => {
+        platform = b.dataset.platform;
+        document.querySelectorAll(".platforms button").forEach((o) => o.setAttribute("aria-pressed", o === b ? "true" : "false"));
+        build();
+      }));
+      build();
+    })();
+
+    document.getElementById("copy").addEventListener("click", async (e) => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById("demo-url").textContent);
+        e.target.textContent = "Copied";
+      } catch {
+        e.target.textContent = "Select and copy";
+      }
+      setTimeout(() => { e.target.textContent = "Copy"; }, 2000);
+    });
+  </script>
+</body>
+</html>

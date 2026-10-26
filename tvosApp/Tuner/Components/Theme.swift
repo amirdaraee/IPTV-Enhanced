@@ -27,14 +27,19 @@ struct Artwork: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: Self.colors(for: title), startPoint: .topLeading, endPoint: .bottomTrailing)
-            Text(Self.initials(title))
-                .font(.system(size: fontSize, weight: .bold))
-                .foregroundStyle(.white.opacity(0.85))
             if let url, !url.isEmpty, let u = URL(string: url) {
-                CachedImage(url: u, maxPixels: maxPixels ?? (contentMode == .fit ? 256 : 720), contentMode: contentMode)
+                CachedImage(url: u, maxPixels: maxPixels ?? (contentMode == .fit ? 256 : 720), contentMode: contentMode) { initials }
+            } else {
+                initials
             }
         }
         .clipped()
+    }
+
+    private var initials: some View {
+        Text(Self.initials(title))
+            .font(.system(size: fontSize, weight: .bold))
+            .foregroundStyle(.white.opacity(0.85))
     }
 
     static func initials(_ s: String) -> String {

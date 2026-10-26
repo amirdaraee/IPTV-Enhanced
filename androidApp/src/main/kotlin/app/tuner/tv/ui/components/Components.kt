@@ -136,16 +136,23 @@ fun Dim(text: String, modifier: Modifier = Modifier, maxLines: Int = 1) {
 fun Artwork(url: String?, title: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop, fontSize: Int = 18) {
     val brush = remember(title) { placeholderBrush(title) }
     val initials = remember(title) { initials(title) }
+    // The initials show only until the image loads: a transparent logo must not show them through.
+    var loaded by remember(url) { mutableStateOf(false) }
     Box(modifier.clip(RoundedCornerShape(8.dp)).background(brush), contentAlignment = Alignment.Center) {
-        Text(
-            initials,
-            color = Color.White.copy(alpha = 0.85f),
-            fontSize = fontSize.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-        )
+        if (!loaded) {
+            Text(
+                initials,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = fontSize.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+        }
         if (!url.isNullOrBlank()) {
-            AsyncImage(model = url, contentDescription = title, contentScale = contentScale, modifier = Modifier.fillMaxSize())
+            AsyncImage(
+                model = url, contentDescription = title, contentScale = contentScale, modifier = Modifier.fillMaxSize(),
+                onSuccess = { loaded = true }, onError = { loaded = false },
+            )
         }
     }
 }

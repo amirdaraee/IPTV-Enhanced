@@ -1,0 +1,6 @@
+# GitHub Pages: index.html is the landing page; Markdown pages (the privacy policy) use _layouts/default.html.
+title: IPTV Enhanced
+exclude: [spec, plan, development.md, store/listing.md]
+defaults:
+  - scope: { path: "" }
+    values: { layout: default }

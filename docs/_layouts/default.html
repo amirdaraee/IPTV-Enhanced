@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.title %}{{ page.title }} · {% endif %}IPTV Enhanced</title>
+  <meta name="theme-color" content="#0b1322">
+  <link rel="icon" href="{{ '/brand/icon.png' | relative_url }}">
+  <link rel="stylesheet" href="{{ '/assets/site.css' | relative_url }}">
+</head>
+<body>
+  <header class="wrap top">
+    <a class="brand" href="{{ '/' | relative_url }}"><img src="{{ '/brand/icon.png' | relative_url }}" alt="">IPTV Enhanced</a>
+    <nav aria-label="Site"><a href="https://github.com/amirdaraee/IPTV-Enhanced">GitHub</a></nav>
+  </header>
+  <main class="wrap doc">
+    {{ content }}
+  </main>
+  <footer class="wrap">
+    <span>© 2026 the IPTV Enhanced authors. Licensed under GPL-3.0.</span>
+    <nav aria-label="Footer">
+      <a href="{{ '/' | relative_url }}">Home</a>
+      <a href="https://github.com/amirdaraee/IPTV-Enhanced">Source code</a>
+      <a href="mailto:apps@amirdaraee.com">Contact</a>
+    </nav>
+  </footer>
+</body>
+</html>
