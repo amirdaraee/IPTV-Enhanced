@@ -16,13 +16,15 @@ import androidx.compose.ui.unit.dp
  */
 val LocalTouchUi = staticCompositionLocalOf { false }
 
-/** The height the layouts are designed for: a 1080p TV at 2x. */
+/** The screen the layouts are designed for: a 1080p TV at 2x. */
+private val DESIGN_WIDTH = 960.dp
 private val DESIGN_HEIGHT = 540.dp
 
 /**
- * On a touch device shorter than a TV, scales the interface down so every screen still gets the
- * height it was laid out for. A phone in landscape is about 410 dp tall; the guide, its header and
- * the dialogs need 540. Tablets and TVs keep their own density.
+ * On a touch device, scales the interface so the TV design fills the screen: the larger side that
+ * still fits both 960 dp across and 540 dp down. A phone in landscape (about 410 dp tall) is scaled
+ * down so the guide, its header and the dialogs keep the height they need; a tablet (about
+ * 1280×800 dp) is scaled up, which keeps the layout as full as on a TV and the touch targets large.
  */
 @Composable
 fun TouchUi(touch: Boolean, content: @Composable () -> Unit) {
@@ -30,8 +32,8 @@ fun TouchUi(touch: Boolean, content: @Composable () -> Unit) {
         if (!touch) return@CompositionLocalProvider content()
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val density = LocalDensity.current
-            if (maxHeight >= DESIGN_HEIGHT) return@BoxWithConstraints content()
-            val scaled = Density(constraints.maxHeight / DESIGN_HEIGHT.value, density.fontScale.coerceAtMost(1.15f))
+            val scale = minOf(constraints.maxWidth / DESIGN_WIDTH.value, constraints.maxHeight / DESIGN_HEIGHT.value)
+            val scaled = Density(scale, density.fontScale.coerceAtMost(1.15f))
             CompositionLocalProvider(LocalDensity provides scaled) { content() }
         }
     }

@@ -8,6 +8,7 @@ Text and assets for Google Play, the Amazon Appstore and the App Store. Keep it 
 |-|----------------------|-----------|
 | TV screenshots | [`android-tv/`](android-tv/), 1920×1080 | [`apple-tv/`](apple-tv/), 3840×2160 |
 | Phone screenshots | [`phone/`](phone/), 1920×1080 | — |
+| Tablet screenshots | [`tablet/`](tablet/), 2560×1600 | — |
 | Icon | [`../brand/icon.png`](../brand/icon.png), 512×512 | from the app's asset catalog |
 | TV banner | [`../brand/banner.png`](../brand/banner.png), 1280×720 | — |
 | Feature graphic | [`feature-graphic.png`](feature-graphic.png), 1024×500 | — |

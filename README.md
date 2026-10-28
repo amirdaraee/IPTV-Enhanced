@@ -15,7 +15,7 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 | ![Fullscreen player with the info bar](docs/store/android-tv/02-player.jpg) | ![Channel list over the live picture](docs/store/android-tv/03-channels.jpg) |
 | ![Movies](docs/store/android-tv/04-movies.jpg) | ![A series with its episodes](docs/store/android-tv/06-series.jpg) |
 
-<sub>Screenshots from Android TV, using made-up demo channels. The Apple TV and phone apps look the same; see <a href="docs/store/apple-tv">docs/store/apple-tv</a> and <a href="docs/store/phone">docs/store/phone</a>.</sub>
+<sub>Screenshots from Android TV, using made-up demo channels. The Apple TV and phone apps look the same; see <a href="docs/store/apple-tv">docs/store/apple-tv</a>, <a href="docs/store/phone">docs/store/phone</a> and <a href="docs/store/tablet">docs/store/tablet</a>.</sub>
 
 ## Get it
 
@@ -109,7 +109,7 @@ On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu a
 
 ### Touch screens
 
-On Android phones and tablets the same screens work with touch. The app runs full screen in landscape, scaled so a phone shows the whole guide.
+On Android phones and tablets the same screens work with touch. The app runs full screen in landscape, scaled to fit the screen the way it fits a TV.
 
 - **Guide:** tap a programme to preview it (or play it from catch-up), tap a channel name or the preview to watch fullscreen, long-press for the menu. Swipe up and down through channels, sideways through time.
 - **Live player:** tap for the info bar with Channels and Options (and seek and pause for catch-up), swipe up or down to change channel, long-press for options.
