@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository. User-facing docs are in [
 
 ## What this is
 
-**IPTV Enhanced**: a free, open-source (GPL-3.0-or-later) IPTV player for Android TV / Google TV / Fire TV and Apple TV. It plays the user's own M3U/XMLTV playlists and Xtream logins and ships no content. The app id is `com.amirdaraee.iptv` on both platforms; changing it would make existing installs lose their data. Internal code names still say *Tuner* (the `app.tuner.*` Kotlin packages, `TunerCore`, `Tuner.xcodeproj`).
+**IPTV Enhanced**: a free, open-source (GPL-3.0-or-later) IPTV player for Android TV / Google TV / Fire TV, Android phones and tablets, and Apple TV. It plays the user's own M3U/XMLTV playlists and Xtream logins and ships no content. The app id is `com.amirdaraee.iptv` on both platforms; changing it would make existing installs lose their data. Internal code names still say *Tuner* (the `app.tuner.*` Kotlin packages, `TunerCore`, `Tuner.xcodeproj`).
 
 ## Layout
 
@@ -32,6 +32,7 @@ Real Apple TV builds need `DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates` on
 - **Change notifications are scoped.** Every mutation in `TunerCore` calls `changed(Changes.X)`; screens subscribe with `watchChanges(mask)`. A new mutation that doesn't call `changed(...)` won't refresh the UI *and* won't reach the user-data backup.
 - **User data vs catalog.** Playlists, `item_pref`, `group_pref`, `progress`, `recent` and `setting` are the user's own data and are covered by `UserData` (backup/restore, `shared/.../UserData.kt`). The catalog and guide re-sync from the provider. If you add user-owned state, add it to the snapshot as well; keep transient security state (the PIN lockout) out.
 - **tvOS storage.** On real hardware only Caches and tmp are writable, so the database lives in `Library/Caches/databases`; the simulator is more permissive, so storage changes must be checked on a device. The backup copy is in the Keychain (`KeychainBackup.swift`).
+- **Touch.** The Android app also runs on phones and tablets (`LocalTouchUi`, `ui/TouchUi.kt`): short screens are scaled to the 540 dp design height, and the TV surfaces get one-tap clicks from `touchClick`. A remote-only interaction (a key handler, a hint that says "press OK") needs a touch equivalent there.
 - **TV input.** Everything must work with a D-pad remote. Act on an OK *release* only when the press started on the same element (see `okDown` in the guide, player and `TvTextField`); test Back on every screen you touch (it should close the innermost thing first).
 - **Suspend functions exposed to Swift** need `@Throws(Exception::class)`, or a Kotlin exception crashes the app.
 - **Store rules.** UI and docs say "Xtream login", not "Xtream Codes"; never name real channels, broadcasters or other apps (that includes the fixture server's made-up names); demo content must be freely shareable (`docs/demo/`), and screenshots use only the showcase account's invented names and generated art. A new runtime dependency needs an entry in `licenses/third-party.txt`, which Settings → About shows.

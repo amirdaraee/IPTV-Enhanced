@@ -6,7 +6,8 @@ Text and assets for Google Play, the Amazon Appstore and the App Store. Keep it 
 
 | | Google Play / Amazon | App Store |
 |-|----------------------|-----------|
-| Screenshots | [`android-tv/`](android-tv/), 1920×1080 | [`apple-tv/`](apple-tv/), 3840×2160 |
+| TV screenshots | [`android-tv/`](android-tv/), 1920×1080 | [`apple-tv/`](apple-tv/), 3840×2160 |
+| Phone screenshots | [`phone/`](phone/), 1920×1080 | — |
 | Icon | [`../brand/icon.png`](../brand/icon.png), 512×512 | from the app's asset catalog |
 | TV banner | [`../brand/banner.png`](../brand/banner.png), 1280×720 | — |
 | Feature graphic | [`feature-graphic.png`](feature-graphic.png), 1024×500 | — |
@@ -34,8 +35,9 @@ The screenshots show the fixture server's made-up showcase channels; see [develo
 > • Preferred audio and subtitle languages
 > • Parental PIN for channels, groups and settings
 > • Handles very large playlists and guides smoothly
+> • Works on Android TV and Google TV, and by touch on phones and tablets
 >
-> No accounts, no ads and no tracking. Your playlists and settings stay on your TV.
+> No accounts, no ads and no tracking. Your playlists and settings stay on your device.
 >
 > IPTV Enhanced does not provide any channels or content. You need a playlist or login from a provider, and you should only add playlists you are authorised to use.
 >

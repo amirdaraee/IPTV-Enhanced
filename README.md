@@ -2,7 +2,7 @@
 
 <img src="docs/brand/banner.png" alt="IPTV Enhanced" width="480">
 
-**A free, open-source IPTV player for Android TV and Apple TV.** · [Website](https://amirdaraee.com/IPTV-Enhanced/)
+**A free, open-source IPTV player for Android TV, Apple TV, and Android phones and tablets.** · [Website](https://amirdaraee.com/IPTV-Enhanced/)
 
 IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M3U8 playlists with XMLTV guides, and Xtream logins (the player API). It ships no content, has no accounts, and collects no telemetry. Everything stays on the device.
 
@@ -15,11 +15,11 @@ IPTV Enhanced is a TV guide and player for the playlists you already have: M3U/M
 | ![Fullscreen player with the info bar](docs/store/android-tv/02-player.jpg) | ![Channel list over the live picture](docs/store/android-tv/03-channels.jpg) |
 | ![Movies](docs/store/android-tv/04-movies.jpg) | ![A series with its episodes](docs/store/android-tv/06-series.jpg) |
 
-<sub>Screenshots from Android TV, using made-up demo channels. The Apple TV app looks the same; see <a href="docs/store/apple-tv">docs/store/apple-tv</a>.</sub>
+<sub>Screenshots from Android TV, using made-up demo channels. The Apple TV and phone apps look the same; see <a href="docs/store/apple-tv">docs/store/apple-tv</a> and <a href="docs/store/phone">docs/store/phone</a>.</sub>
 
 ## Get it
 
-- **Android TV, Google TV and Fire TV:** Google Play and the Amazon Appstore are coming soon. Until then, download the APK from [Releases](https://github.com/amirdaraee/IPTV-Enhanced/releases) and sideload it.
+- **Android TV, Google TV, Fire TV and Android phones and tablets:** Google Play and the Amazon Appstore are coming soon. Until then, download the APK from [Releases](https://github.com/amirdaraee/IPTV-Enhanced/releases) and sideload it.
 - **Apple TV:** the App Store is coming soon. Until then, you can [build it yourself](docs/development.md#installing-on-a-real-apple-tv).
 
 ## Getting started
@@ -88,8 +88,8 @@ It has Big Buck Bunny (2008) and Tears of Steel (2012), © Blender Foundation, C
 
 ## Platforms
 
-| | Android TV / Google TV | Apple TV |
-|-|------------------------|----------|
+| | Android TV / Google TV, phones and tablets | Apple TV |
+|-|--------------------------------------------|----------|
 | Minimum OS | Android 7.0 (API 24) | tvOS 17 |
 | UI | Jetpack Compose for TV | SwiftUI (native focus engine) |
 | Player | Media3 ExoPlayer: HLS, DASH, MPEG-TS, MP4, MKV | AVPlayer: HLS, MP4 (Xtream live uses HLS) |
@@ -106,6 +106,14 @@ It has Big Buck Bunny (2008) and Tears of Steel (2012), © Blender Foundation, C
 | Movie player | Play/pause | | Hide controls while playing, otherwise leave | | Seek |
 
 On Apple TV, the Siri Remote clickpad and swipes map to the same actions. Menu acts as Back. On Apple TV, Back from the group list goes to the tab bar; from the Movies and Series category lists and from Settings it goes to Live TV.
+
+### Touch screens
+
+On Android phones and tablets the same screens work with touch. The app runs full screen in landscape, scaled so a phone shows the whole guide.
+
+- **Guide:** tap a programme to preview it (or play it from catch-up), tap a channel name or the preview to watch fullscreen, long-press for the menu. Swipe up and down through channels, sideways through time.
+- **Live player:** tap for the info bar with Channels and Options (and seek and pause for catch-up), swipe up or down to change channel, long-press for options.
+- **Everywhere else:** tap where the remote would press OK, long-press where it would hold OK, and use the system Back gesture as Back.
 
 ## Privacy
 

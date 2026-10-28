@@ -115,6 +115,9 @@ fun HomeScreen(onExit: () -> Unit) {
         expiry = null
     }
 
+    // Registered first, so every screen's own Back comes before it: with nothing focused (a
+    // touch screen after a tap elsewhere), Back on the guide asks to exit rather than closing the app.
+    BackHandler(enabled = !railFocused && tab == Tab.Live) { confirmExit = true }
     // Back on the side menu goes home to Live TV first, then asks to exit.
     BackHandler(enabled = railFocused) {
         if (tab != Tab.Live) runCatching { tabFocus.getValue(Tab.Live).requestFocus() } else confirmExit = true
@@ -157,7 +160,7 @@ fun HomeScreen(onExit: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(Modifier.padding(start = 6.dp, bottom = 20.dp).height(32.dp), verticalAlignment = Alignment.CenterVertically) {
-                Image(painterResource(R.mipmap.ic_launcher), contentDescription = null, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)))
+                Image(painterResource(R.drawable.brand_mark), contentDescription = null, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)))
                 if (railFocused) {
                     Text(
                         "IPTV Enhanced", style = MaterialTheme.typography.titleMedium, color = Palette.Accent, maxLines = 1,

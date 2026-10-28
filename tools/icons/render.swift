@@ -1,5 +1,5 @@
 // Renders IPTV Enhanced's icon artwork with CoreGraphics.
-// usage: swift render.swift <kind: back|front|full|banner|square> <width> <height> <out.png>
+// usage: swift render.swift <kind: back|front|adaptive|full|banner|square> <width> <height> <out.png>
 import AppKit
 import CoreGraphics
 
@@ -9,8 +9,8 @@ let w = Int(args[2])!, h = Int(args[3])!
 let out = URL(fileURLWithPath: args[4])
 
 let cs = CGColorSpaceCreateDeviceRGB()
-// Only the tvOS front layer is transparent; opaque images skip the alpha channel (smaller PNGs).
-let alpha: CGImageAlphaInfo = kind == "front" ? .premultipliedLast : .noneSkipLast
+// Only the foreground layers are transparent; opaque images skip the alpha channel (smaller PNGs).
+let alpha: CGImageAlphaInfo = kind == "front" || kind == "adaptive" ? .premultipliedLast : .noneSkipLast
 let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: cs, bitmapInfo: alpha.rawValue)!
 let W = CGFloat(w), H = CGFloat(h)
 let accent = CGColor(red: 0.369, green: 0.918, blue: 0.831, alpha: 1)
@@ -108,6 +108,10 @@ case "back":
     background()
 case "front":
     mark(center: CGPoint(x: W / 2, y: H / 2), size: min(W, H) * 0.62)
+case "adaptive":
+    // Android adaptive icon foreground: launchers mask the outer third, so the mark stays inside
+    // the 66 dp safe zone of the 108 dp canvas.
+    mark(center: CGPoint(x: W / 2, y: H / 2), size: min(W, H) * 0.42)
 case "full", "square":
     background()
     mark(center: CGPoint(x: W / 2, y: H / 2), size: min(W, H) * 0.62)

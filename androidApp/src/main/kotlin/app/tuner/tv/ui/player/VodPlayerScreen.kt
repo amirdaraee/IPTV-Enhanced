@@ -46,6 +46,7 @@ import app.tuner.tv.TunerApplication
 import app.tuner.tv.core
 import app.tuner.tv.playerController
 import app.tuner.tv.ui.LocalNavigator
+import app.tuner.tv.ui.LocalTouchUi
 import app.tuner.tv.ui.components.ContextMenu
 import app.tuner.tv.ui.components.Dim
 import app.tuner.tv.ui.components.MenuAction
@@ -99,11 +100,15 @@ fun VodPlayerScreen() {
         TunerApplication.instance.appScope.launch { runCatching { core.saveProgress(req, position, duration) } }
     }
 
+    val touch = LocalTouchUi.current
+    // Touch screens get an Options button (the remote's Menu key) while Media3's controls are up.
+    var controlsVisible by remember { mutableStateOf(false) }
     val view = remember {
         (LayoutInflater.from(context).inflate(R.layout.player_vod, null) as PlayerView).apply {
             controllerShowTimeoutMs = 4000
             setShowFastForwardButton(true)
             setShowRewindButton(true)
+            setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { controlsVisible = it == android.view.View.VISIBLE })
         }
     }
     // The wrapper below is created once; it reads the latest state through this.
@@ -218,6 +223,9 @@ fun VodPlayerScreen() {
         )
         playerController.status?.let {
             Text(it, color = Color.White, modifier = Modifier.align(Alignment.TopCenter).padding(24.dp))
+        }
+        if (touch && controlsVisible && upNext == null) {
+            PrimaryButton("Options", onClick = { openMenu() }, modifier = Modifier.align(Alignment.TopEnd).padding(24.dp))
         }
         upNext?.let { next ->
             Column(

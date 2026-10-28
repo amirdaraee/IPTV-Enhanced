@@ -3,8 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- TV only: Google Play then lists the app for TVs and not for phones. -->
-    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <!-- TVs, phones and tablets: leanback is optional so Play lists the app on all of them. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application

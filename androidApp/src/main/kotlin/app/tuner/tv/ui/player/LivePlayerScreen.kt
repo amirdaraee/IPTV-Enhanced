@@ -53,6 +53,12 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import app.tuner.tv.ui.LocalTouchUi
+import app.tuner.tv.ui.components.PrimaryButton
+import kotlin.math.abs
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -88,6 +94,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** How far a vertical swipe must travel to change channel. */
+private val ZAP_SWIPE = 60.dp
+
 /** Zaps closer together than this are coalesced into one tune. */
 private const val ZAP_SETTLE_MS = 350L
 
@@ -101,6 +110,7 @@ private val RESIZE_MODES = listOf(
  * Fullscreen live TV. Remote grammar:
  * Up/Down zap · OK channel list · Left/Right info · long-press OK / Menu options ·
  * digits jump to a channel number · Last/0-double-press toggles previous channel · Back exits overlays, then the player.
+ * Touch: tap for the info bar and its buttons, swipe up/down to zap, long-press for options.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -128,6 +138,7 @@ fun LivePlayerScreen() {
     var resizeIndex by remember { mutableIntStateOf(0) }
     val listNowPlaying = remember { mutableStateMapOf<Long, String>() }
     val isCatchup = playerController.current?.let { !it.isLive } == true
+    val touch = LocalTouchUi.current
 
     LaunchedEffect(Unit) {
         LiveSession.pendingRequest?.let { playerController.play(it) }
@@ -185,6 +196,10 @@ fun LivePlayerScreen() {
         lastZap = t
         LiveSession.index = next
         tune(list[next], next, debounce = rapid)
+    }
+
+    fun seekBy(delta: Long) {
+        playerController.player.seekTo((playerController.player.currentPosition + delta).coerceAtLeast(0))
     }
 
     fun jumpToNumber(number: Int) {
@@ -248,10 +263,7 @@ fun LivePlayerScreen() {
                     Key.DirectionUp, Key.ChannelDown -> { zap(-1); true }
                     Key.DirectionDown, Key.ChannelUp -> { zap(1); true }
                     Key.DirectionLeft, Key.DirectionRight, Key.Info -> {
-                        if (isCatchup && e.key != Key.Info) {
-                            val delta = if (e.key == Key.DirectionRight) 30_000L else -15_000L
-                            playerController.player.seekTo((playerController.player.currentPosition + delta).coerceAtLeast(0))
-                        }
+                        if (isCatchup && e.key != Key.Info) seekBy(if (e.key == Key.DirectionRight) 30_000L else -15_000L)
                         flashInfo(); true
                     }
                     Key.Menu -> { showMenu = true; true }
@@ -266,7 +278,29 @@ fun LivePlayerScreen() {
                     else -> false
                 }
             }
-            .focusable(),
+            .focusable()
+            .then(if (!touch) Modifier else Modifier
+                // Touch: a tap shows or hides the info bar (and closes the channel list), a long
+                // press opens the options, and swiping up or down zaps like the remote's Up/Down.
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = {
+                                                        when {
+                                showList -> showList = false
+                                showInfo -> { infoJob?.cancel(); showInfo = false }
+                                else -> flashInfo()
+                            }
+                        },
+                        onLongPress = { showMenu = true },
+                    )
+                }
+                .pointerInput(Unit) {
+                    var dragged = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { dragged = 0f },
+                        onDragEnd = { if (abs(dragged) > ZAP_SWIPE.toPx()) zap(if (dragged < 0) 1 else -1) },
+                    ) { change, dy -> change.consume(); dragged += dy }
+                }),
     ) {
         VideoSurface(Modifier.fillMaxSize(), RESIZE_MODES[resizeIndex].first)
 
@@ -278,6 +312,22 @@ fun LivePlayerScreen() {
 
         AnimatedVisibility(showInfo && channel != null, Modifier.align(Alignment.BottomCenter), enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
             channel?.let { InfoBar(it, nowNext, isCatchup) }
+        }
+        // What the remote's OK, Menu and Left/Right do, as buttons, while the info bar is up.
+        AnimatedVisibility(touch && showInfo && !showList, Modifier.align(Alignment.TopEnd), enter = fadeIn(), exit = fadeOut()) {
+            Row(Modifier.padding(24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (isCatchup) {
+                    PrimaryButton("−15 s", onClick = { seekBy(-15_000L); flashInfo() })
+                    PrimaryButton(if (playerController.player.isPlaying) "Pause" else "Play", onClick = {
+                        if (playerController.player.isPlaying) playerController.pause() else playerController.resume()
+                        flashInfo()
+                    })
+                    PrimaryButton("+30 s", onClick = { seekBy(30_000L); flashInfo() })
+                } else {
+                    PrimaryButton("Channels", onClick = { showList = true })
+                }
+                PrimaryButton("Options", onClick = { showMenu = true })
+            }
         }
 
         if (numberEntry.isNotEmpty()) {
@@ -305,6 +355,7 @@ fun LivePlayerScreen() {
                 },
                 focusRequester = listFocus,
                 onSelect = { idx, ch -> showList = false; tune(ch, idx) },
+                onClose = { showList = false },
             )
         }
 
@@ -431,6 +482,7 @@ private fun ChannelListOverlay(
     onVisible: (IntRange) -> Unit,
     focusRequester: FocusRequester,
     onSelect: (Int, Channel) -> Unit,
+    onClose: () -> Unit,
 ) {
     val channels = LiveSession.channels
     val currentIndex = channels.indexOfFirst { it.id == current?.id }.coerceAtLeast(0)
@@ -439,7 +491,15 @@ private fun ChannelListOverlay(
         snapshotFlow { state.firstVisibleItemIndex to state.layoutInfo.visibleItemsInfo.size }
             .collect { (first, count) -> onVisible(first..(first + count + 10)) }
     }
-    Box(Modifier.width(400.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.95f), Color.Black.copy(alpha = 0.75f))))) {
+    Box(
+        Modifier.width(400.dp).fillMaxHeight().background(Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.95f), Color.Black.copy(alpha = 0.75f))))
+            // Back closes the list. Left to the focus system, it would only move focus out of the list item.
+            .onPreviewKeyEvent { e ->
+                if (e.key != Key.Back) return@onPreviewKeyEvent false
+                if (e.type == KeyEventType.KeyUp) onClose()
+                true
+            },
+    ) {
         LazyColumn(state = state, modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->
                 FocusSurface(

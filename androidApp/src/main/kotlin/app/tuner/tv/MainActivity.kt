@@ -1,5 +1,7 @@
 package app.tuner.tv
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -8,7 +10,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -17,7 +22,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import app.tuner.core.model.GroupType
+import app.tuner.tv.ui.TouchUi
 import app.tuner.tv.ui.LocalNavigator
 import app.tuner.tv.ui.Navigator
 import app.tuner.tv.ui.Screen
@@ -36,13 +46,30 @@ import app.tuner.tv.ui.vod.SeriesDetailScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val touch = !packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        if (touch) {
+            // Full screen like a TV; the system bars come back with a swipe from the edge.
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.systemBars())
+            }
+            // Draw the background under the camera cutout too (the content is padded clear of it).
+            // Before Android 15 the window isn't edge-to-edge unless asked.
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.attributes = window.attributes.apply {
+                    layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                }
+            }
+        }
         setContent {
             TunerTheme {
                 val start by produceState<Screen?>(null) {
                     value = if (core.hasSources()) Screen.Home else Screen.Welcome
                 }
-                Box(Modifier.fillMaxSize().background(Palette.Background)) {
-                    start?.let { App(it) }
+                // The camera cutout is left black (like the player's bars), and nothing is drawn under it.
+                Box(Modifier.fillMaxSize().background(Color.Black).windowInsetsPadding(WindowInsets.displayCutout).background(Palette.Background)) {
+                    TouchUi(touch) { start?.let { App(it) } }
                 }
             }
         }

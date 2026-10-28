@@ -100,6 +100,7 @@ python3 tools/fixture-server/server.py --showcase
   ```
 
 - **Android TV:** on a 1080p Google TV emulator, add an Xtream login with server `http://10.0.2.2:8900` and username `showcase`, then take each shot with `adb exec-out screencap -p`. Cold-boot the emulator (`-no-snapshot`) first: a restored snapshot keeps an old clock, and the guide then treats live programmes as past ones.
+- **Android phone:** the same, on a phone emulator with a 1080×1920 screen held in landscape. Google Play accepts screenshots up to 2:1, and a 16:9 phone stays inside that. Swipe from the middle of the screen: a swipe near an edge shows the system bars, and the next tap only hides them again.
 
 The published shots are in [`store/`](store/), with the Google Play feature graphic (`tools/icons/generate.sh` renders it).
 

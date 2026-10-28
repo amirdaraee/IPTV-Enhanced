@@ -48,6 +48,11 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.rememberUpdatedState
+import app.tuner.tv.ui.LocalTouchUi
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -123,6 +128,7 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
     val listState = rememberLazyListState()
     var gridFocused by remember { mutableStateOf(false) }
     var groupsFocused by remember { mutableStateOf(false) }
+    val touch = LocalTouchUi.current
 
     LaunchedEffect(Unit) {
         val id = LiveSession.returnTo ?: return@LaunchedEffect
@@ -230,13 +236,13 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
             )
             Spacer(Modifier.width(20.dp))
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                GuideHeader(vm, now)
+                GuideHeader(vm, now, onPreviewTap = { vm.focusedChannel()?.let { watch(it) } })
                 if (!vm.loaded) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingDots() }
                 } else if (vm.channels.isEmpty()) {
                     EmptyState(
                         title = if (vm.group?.type == GroupType.FAVORITES) "No favorites yet" else "No channels here",
-                        message = "Choose another group on the left, or long-press OK on a channel to add it to Favorites.",
+                        message = "Choose another group on the left, or ${if (touch) "long-press" else "long-press OK on"} a channel to add it to Favorites.",
                     )
                 } else {
                     GuideGrid(
@@ -276,8 +282,8 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
                 }
             })
             add(MenuAction("Play fullscreen") { watch(ch) })
-            add(MenuAction("Earlier programmes", "Rewind") { vm.showEarlier(); runCatching { gridFocus.requestFocus() } })
-            if (vm.windowStart != GuideViewModel.align(t)) add(MenuAction("Back to now", "Play/Pause") { vm.jumpToNow(); runCatching { gridFocus.requestFocus() } })
+            add(MenuAction("Earlier programmes", if (touch) null else "Rewind") { vm.showEarlier(); runCatching { gridFocus.requestFocus() } })
+            if (vm.windowStart != GuideViewModel.align(t)) add(MenuAction("Back to now", if (touch) null else "Play/Pause") { vm.jumpToNow(); runCatching { gridFocus.requestFocus() } })
             if (vm.group?.type == GroupType.FAVORITES) {
                 add(MenuAction("Move up") { scope.launch { core.moveFavorite(ch, -1) } })
                 add(MenuAction("Move down") { scope.launch { core.moveFavorite(ch, 1) } })
@@ -319,7 +325,7 @@ fun GuideScreen(focusRequester: FocusRequester, onExitLeft: () -> Unit, vm: Guid
 }
 
 @Composable
-private fun GuideHeader(vm: GuideViewModel, now: Long) {
+private fun GuideHeader(vm: GuideViewModel, now: Long, onPreviewTap: () -> Unit) {
     val ch = vm.focusedChannel()
     val p = vm.focusedProgramme()
     Row(
@@ -357,16 +363,19 @@ private fun GuideHeader(vm: GuideViewModel, now: Long) {
         }
         Spacer(Modifier.width(24.dp))
         val playing = playerController.current?.isLive == true
+        val touch = LocalTouchUi.current
         Box(
             Modifier.fillMaxHeight().aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)).background(Color.Black)
-                .border(1.dp, Palette.Outline, RoundedCornerShape(10.dp)),
+                .border(1.dp, Palette.Outline, RoundedCornerShape(10.dp))
+                // On a touch screen the preview is the way to fullscreen.
+                .then(if (touch && playing) Modifier.pointerInput(Unit) { detectTapGestures { onPreviewTap() } } else Modifier),
             contentAlignment = Alignment.Center,
         ) {
             if (playing) {
                 VideoSurface(Modifier.fillMaxSize())
                 playerController.status?.let { Text(it, color = Color.White, fontSize = 12.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(6.dp)) }
             } else {
-                Dim("Press OK to preview")
+                Dim(if (touch) "Tap a programme to preview" else "Press OK to preview")
             }
         }
     }
@@ -410,6 +419,38 @@ private fun GuideGrid(
     }
 
     fun current(): Programme? = if (vm.onChannel) null else vm.focusedProgramme()
+
+    val touch = LocalTouchUi.current
+    val touchFocus = remember { FocusRequester() }
+
+    /**
+     * A tap does what OK does where the remote's highlight would be: on a channel name it plays
+     * the channel fullscreen, on a programme it previews it (or plays it from catch-up). A long
+     * press opens the menu, like holding OK. [x] is in dp from the row's left edge.
+     */
+    fun tapAt(index: Int, x: Float, long: Boolean, dpPerMs: Float) {
+        val ch = vm.channels.getOrNull(index) ?: return
+        vm.row = index
+        runCatching { touchFocus.requestFocus() }
+        if (x < CHANNEL_WIDTH.value) {
+            vm.onChannel = true
+            vm.focusTime = System.currentTimeMillis()
+            if (long) onMenu(ch, null) else onWatch(ch)
+        } else {
+            vm.onChannel = false
+            vm.focusTime = vm.windowStart + ((x - CHANNEL_WIDTH.value) / dpPerMs).toLong()
+            if (long) onMenu(ch, vm.focusedProgramme()) else onActivate(ch, vm.focusedProgramme())
+        }
+    }
+    val tapState = rememberUpdatedState(::tapAt)
+    // One lambda for every row, so a new grid composition doesn't recompose rows that haven't changed.
+    val onRowTap = remember { { i: Int, x: Float, long: Boolean, dpPerMs: Float -> tapState.value(i, x, long, dpPerMs) } }
+
+    /** A sideways swipe moves the visible window half an hour per [SLOT] of distance. */
+    fun shiftWindow(slots: Int) {
+        val viewport = VIEWPORT_MINUTES * MINUTE
+        vm.windowStart = (vm.windowStart + slots * SLOT).coerceIn(align(minTime), align(maxTime - viewport))
+    }
 
     fun toChannel() {
         vm.onChannel = true
@@ -487,6 +528,7 @@ private fun GuideGrid(
                     else -> false
                 }
             }
+            .focusRequester(touchFocus)
             .focusable(),
     ) {
         val stripWidth = maxWidth - CHANNEL_WIDTH
@@ -496,8 +538,23 @@ private fun GuideGrid(
 
         Column(Modifier.fillMaxSize()) {
             TimeRuler(windowStart, windowEnd, dpPerMs, now)
-            Box(Modifier.fillMaxSize()) {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), userScrollEnabled = false) {
+            val slotWidth = (SLOT * dpPerMs).dp
+            Box(
+                Modifier.fillMaxSize().then(
+                    if (!touch) Modifier else Modifier.pointerInput(slotWidth) {
+                        var dragged = 0f
+                        detectHorizontalDragGestures(onDragStart = { dragged = 0f }) { change, dx ->
+                            change.consume()
+                            dragged += dx
+                            val slot = slotWidth.toPx()
+                            // Dragging the grid right shows earlier programmes, like scrolling a timeline.
+                            while (dragged >= slot) { shiftWindow(-1); dragged -= slot }
+                            while (dragged <= -slot) { shiftWindow(1); dragged += slot }
+                        }
+                    },
+                ),
+            ) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), userScrollEnabled = touch) {
                     itemsIndexed(vm.channels, key = { _, c -> c.id }) { index, ch ->
                         GuideRow(
                             channel = ch,
@@ -512,6 +569,12 @@ private fun GuideGrid(
                             // left/right recomposes one row instead of every visible row.
                             focusTime = if (focused && index == vm.row && !vm.onChannel) vm.focusTime else 0L,
                             playing = playerController.current?.channelId == ch.id,
+                            modifier = if (!touch) Modifier else Modifier.pointerInput(index, dpPerMs) {
+                                detectTapGestures(
+                                    onTap = { onRowTap(index, it.x.toDp().value, false, dpPerMs) },
+                                    onLongPress = { onRowTap(index, it.x.toDp().value, true, dpPerMs) },
+                                )
+                            },
                         )
                     }
                 }
@@ -558,8 +621,9 @@ private fun GuideRow(
     channelFocused: Boolean,
     focusTime: Long,
     playing: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    Row(Modifier.fillMaxWidth().height(ROW_HEIGHT).padding(vertical = 2.dp)) {
+    Row(modifier.fillMaxWidth().height(ROW_HEIGHT).padding(vertical = 2.dp)) {
         Row(
             Modifier.width(CHANNEL_WIDTH).fillMaxHeight().padding(start = 16.dp, end = 6.dp)
                 .clip(RoundedCornerShape(8.dp))

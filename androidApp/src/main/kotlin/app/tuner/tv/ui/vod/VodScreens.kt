@@ -44,6 +44,7 @@ import androidx.tv.material3.Text
 import app.tuner.core.model.ContentKind
 import app.tuner.core.model.GroupType
 import app.tuner.tv.core
+import app.tuner.tv.ui.LocalTouchUi
 import app.tuner.tv.ui.LocalNavigator
 import app.tuner.tv.ui.Screen
 import app.tuner.tv.ui.components.Artwork
@@ -179,7 +180,7 @@ private fun VodBrowser(vm: VodViewModel, kind: ContentKind, focusRequester: Focu
                 .collect { last -> if (last >= vm.items.size - 24) vm.loadMore() }
         }
         if (vm.items.isEmpty() && vm.loaded) {
-            EmptyState("Nothing here", if (vm.group?.type == GroupType.FAVORITES) "Long-press OK on a poster to add it to Favorites." else "This category is empty.")
+            EmptyState("Nothing here", if (vm.group?.type == GroupType.FAVORITES) if (LocalTouchUi.current) "Long-press a poster to add it to Favorites." else "Long-press OK on a poster to add it to Favorites." else "This category is empty.")
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(132.dp),

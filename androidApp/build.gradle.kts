@@ -11,8 +11,8 @@ android {
         applicationId = "com.amirdaraee.iptv"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     // Release builds are signed with the upload key named in ~/.gradle/gradle.properties (or the CI's

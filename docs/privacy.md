@@ -1,12 +1,12 @@
 # Privacy policy
 
-*IPTV Enhanced, for Android TV, Google TV, Fire TV and Apple TV. Last updated 26 October 2026.*
+*IPTV Enhanced, for Android TV, Google TV, Fire TV, Apple TV, and Android phones and tablets. Last updated 26 October 2026.*
 
 IPTV Enhanced does not collect, sell or share any personal data. The developers receive nothing from the app: it has no accounts, analytics, advertising, crash reporting or tracking of any kind.
 
 ## What stays on your device
 
-The app stores what you enter and what you do in it on your TV only:
+The app stores what you enter and what you do in it on your device only:
 
 - the playlists you add: their addresses and, for Xtream logins, your username and password;
 - the channel list and TV guide downloaded from those playlists;
@@ -17,7 +17,7 @@ Deleting a playlist removes its data. Uninstalling the app removes everything, e
 
 ## Where the app connects
 
-The app only connects to the addresses in your playlists: your provider's servers, the guides and channel logos they list, and the streams you play. These requests go directly from your TV to those servers, which see your IP address and, for Xtream logins, your username and password, as with any player. Their own privacy policies apply. The developers don't run any server that the app talks to.
+The app only connects to the addresses in your playlists: your provider's servers, the guides and channel logos they list, and the streams you play. These requests go directly from your device to those servers, which see your IP address and, for Xtream logins, your username and password, as with any player. Their own privacy policies apply. The developers don't run any server that the app talks to.
 
 ## Backups
 

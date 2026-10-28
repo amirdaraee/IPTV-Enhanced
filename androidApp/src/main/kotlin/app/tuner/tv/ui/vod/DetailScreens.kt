@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -215,8 +216,14 @@ fun SeriesDetailScreen(seriesId: Long) {
                     })
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(14.dp))
+            // The focused chip grows a little; the padding keeps the row from clipping it, and the
+            // offset keeps the chips lined up with the poster above.
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(6.dp),
+                modifier = Modifier.offset(x = (-6).dp),
+            ) {
                 items(d.seasons) { s ->
                     FocusSurface(
                         onClick = { season = s },
@@ -227,7 +234,7 @@ fun SeriesDetailScreen(seriesId: Long) {
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(6.dp))
             val episodes = d.episodes.filter { it.season == season }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 40.dp)) {
                 items(episodes, key = { it.remoteId }) { e -> EpisodeRow(e) { play { core.playEpisode(d.series, e) } } }

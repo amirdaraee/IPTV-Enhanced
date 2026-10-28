@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerates the Android banner/launcher and the tvOS brand assets from render.swift.
+# Regenerates the Android banner/launcher icons and the tvOS brand assets from render.swift.
 set -euo pipefail
 cd "$(dirname "$0")"
 BIN=$(mktemp -d)/render-icon
@@ -10,6 +10,12 @@ ROOT=../..
 mkdir -p $ROOT/androidApp/src/main/res/drawable-xhdpi $ROOT/androidApp/src/main/res/mipmap-xxxhdpi
 "$BIN" banner 640 360 $ROOT/androidApp/src/main/res/drawable-xhdpi/banner.png
 "$BIN" square 192 192 $ROOT/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+# The side menu's logo (Compose can't draw the adaptive icon).
+mkdir -p $ROOT/androidApp/src/main/res/drawable-xxxhdpi
+"$BIN" square 192 192 $ROOT/androidApp/src/main/res/drawable-xxxhdpi/brand_mark.png
+# Phones and tablets: adaptive icon layers (108 dp at xxxhdpi).
+"$BIN" back 432 432 $ROOT/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher_background.png
+"$BIN" adaptive 432 432 $ROOT/androidApp/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png
 rm -f $ROOT/androidApp/src/main/res/drawable/banner.xml
 
 # tvOS: layered app icons + top shelf images.

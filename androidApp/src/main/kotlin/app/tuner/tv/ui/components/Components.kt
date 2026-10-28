@@ -46,6 +46,15 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -63,10 +72,57 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import app.tuner.tv.ui.LocalTouchUi
 import app.tuner.tv.ui.theme.Palette
 import coil3.compose.AsyncImage
 
 private val Shape = RoundedCornerShape(10.dp)
+
+/**
+ * One-tap clicks and long presses for the TV surfaces. On their own they treat a tap on an
+ * unfocused element as "focus it" and only click on a second tap, which is right for a pointer
+ * on a TV and wrong for a finger. This sees the touch first (the Initial pass) and takes it: a tap
+ * focuses and clicks at once, a held press is a long click. A finger that moves is left to scroll.
+ */
+@Composable
+fun Modifier.touchClick(onClick: () -> Unit, onLongClick: (() -> Unit)? = null, enabled: Boolean = true): Modifier {
+    if (!enabled) return this
+    val focus = remember { FocusRequester() }
+    val click by rememberUpdatedState(onClick)
+    val longClick by rememberUpdatedState(onLongClick)
+    return focusRequester(focus).pointerInput(Unit) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val long = longClick
+            val up = if (long == null) awaitTapUp(down)
+            else withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { awaitTapUp(down) }
+            when {
+                up != null -> {
+                    up.consume()
+                    runCatching { focus.requestFocus() }
+                    click()
+                }
+                // Still held after the long-press timeout (not cancelled by a scroll).
+                long != null && currentEvent.changes.any { it.id == down.id && it.pressed && !it.isConsumed } -> {
+                    currentEvent.changes.forEach { it.consume() }
+                    runCatching { focus.requestFocus() }
+                    long()
+                    // Swallow the rest of the press so its release doesn't click as well.
+                    do { val e = awaitPointerEvent(PointerEventPass.Initial); e.changes.forEach { it.consume() } } while (e.changes.any { it.pressed })
+                }
+            }
+        }
+    }
+}
+
+/** The release of a tap, or null once the finger moves past the touch slop (a scroll) or the press is cancelled. */
+private suspend fun AwaitPointerEventScope.awaitTapUp(down: PointerInputChange): PointerInputChange? {
+    while (true) {
+        val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: return null
+        if (!change.pressed) return change
+        if (change.isConsumed || (change.position - down.position).getDistance() > viewConfiguration.touchSlop) return null
+    }
+}
 
 /** Focusable surface with the app's focus treatment (lift, accent outline). */
 @Composable
@@ -83,7 +139,7 @@ fun FocusSurface(
     Surface(
         onClick = onClick,
         onLongClick = onLongClick,
-        modifier = modifier,
+        modifier = modifier.touchClick(onClick, onLongClick),
         shape = ClickableSurfaceDefaults.shape(shape),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = color,
@@ -103,7 +159,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.touchClick(onClick, enabled = enabled).height(48.dp),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(24.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Palette.SurfaceHigh,
@@ -229,7 +285,7 @@ fun TvTextField(
     Column(modifier) {
         // Typing looks different from a merely focused field, so it's clear OK has taken effect.
         Text(
-            if (editing) "$label · typing, press Done to finish" else label,
+            if (editing && !LocalTouchUi.current) "$label · typing, press Done to finish" else label,
             style = MaterialTheme.typography.labelMedium,
             color = if (focused) Palette.Accent else Palette.TextDim,
         )
@@ -252,6 +308,13 @@ fun TvTextField(
                 .onFocusChanged {
                     focused = it.isFocused
                     if (!it.isFocused) { editing = false; okDown = false }
+                }
+                // A tap is a touch screen's OK: start typing. Watched before the field handles it.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        if (waitForUpOrCancellation(PointerEventPass.Initial) != null) editing = true
+                    }
                 }
                 .onPreviewKeyEvent { e ->
                     val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
