@@ -20,7 +20,7 @@ struct Artwork: View {
     let url: String?
     let title: String
     var contentMode: ContentMode = .fill
-    var fontSize: CGFloat = 28
+    var fontSize: CGFloat = 28.ui
     /// Decode size; logos (fit) are drawn small, posters and stills larger.
     var maxPixels: Int?
 
@@ -86,10 +86,10 @@ struct Pill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 16, weight: .bold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(background, in: RoundedRectangle(cornerRadius: 5))
+            .font(.system(size: 16.ui, weight: .bold))
+            .padding(.horizontal, 8.ui)
+            .padding(.vertical, 2.ui)
+            .background(background, in: RoundedRectangle(cornerRadius: 5.ui))
             .foregroundStyle(foreground)
     }
 }
@@ -99,12 +99,12 @@ struct EmptyStateView: View {
     let message: String
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 12.ui) {
             Text(title).font(.title2.weight(.semibold))
             Text(message).foregroundStyle(Palette.textDim).multilineTextAlignment(.center)
         }
-        .frame(maxWidth: 900)
-        .padding(60)
+        .frame(maxWidth: 900.ui)
+        .padding(60.ui)
     }
 }
 
@@ -115,16 +115,19 @@ struct RowButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.horizontal, 22)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 22.ui)
+            .padding(.vertical, 14.ui)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The whole row is the target on touch, not just its text.
+            .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 12.ui)
                     .fill(focused ? Palette.surfaceFocus : (selected ? Palette.surfaceHigh : .clear))
             )
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(focused ? Palette.accent : .clear, lineWidth: 3))
+            .overlay(RoundedRectangle(cornerRadius: 12.ui).stroke(focused ? Palette.accent : .clear, lineWidth: 3.ui))
             .foregroundStyle(selected && !focused ? Palette.accent : Palette.text)
             .scaleEffect(focused ? 1.03 : 1)
+            .opacity(configuration.isPressed ? 0.6 : 1)
             .animation(.easeOut(duration: 0.12), value: focused)
     }
 }
@@ -134,8 +137,8 @@ struct Toast: View {
 
     var body: some View {
         Text(text)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 28.ui)
+            .padding(.vertical, 14.ui)
             .background(Palette.surfaceHigh, in: Capsule())
             .overlay(Capsule().stroke(Palette.outline))
     }

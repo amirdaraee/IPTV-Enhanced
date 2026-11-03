@@ -15,21 +15,21 @@ struct PinPad: View {
     @FocusState private var firstKey: Bool
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 24.ui) {
             Text(title).font(.title2.weight(.semibold))
             Text(lockoutSecs > 0 ? "Too many wrong attempts. Try again in \(lockoutSecs) s" : (error ? "Wrong PIN, try again" : message))
                 .foregroundStyle(error || lockoutSecs > 0 ? Palette.live : Palette.textDim)
-            HStack(spacing: 18) {
+            HStack(spacing: 18.ui) {
                 ForEach(0..<4, id: \.self) { i in
-                    Circle().fill(i < pin.count ? Palette.accent : Palette.outline).frame(width: 22, height: 22)
+                    Circle().fill(i < pin.count ? Palette.accent : Palette.outline).frame(width: 22.ui, height: 22.ui)
                 }
             }
-            VStack(spacing: 14) {
+            VStack(spacing: 14.ui) {
                 ForEach([["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["⌫", "0", "✕"]], id: \.self) { row in
-                    HStack(spacing: 14) {
+                    HStack(spacing: 14.ui) {
                         ForEach(row, id: \.self) { key in
                             Button { press(key) } label: {
-                                Text(key).font(.title2).frame(width: 110, height: 70)
+                                Text(key).font(.title2).frame(width: 110.ui, height: 70.ui)
                             }
                             .focused($firstKey, equals: key == "1")
                         }
@@ -37,8 +37,8 @@ struct PinPad: View {
                 }
             }
         }
-        .padding(60)
-        .background(Palette.surfaceHigh, in: RoundedRectangle(cornerRadius: 28))
+        .padding(60.ui)
+        .background(Palette.surfaceHigh, in: RoundedRectangle(cornerRadius: 28.ui))
         .onAppear {
             firstKey = true
             refreshLockout()

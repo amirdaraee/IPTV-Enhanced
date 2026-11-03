@@ -12,6 +12,7 @@ struct TunerApp: App {
                 .environmentObject(model)
                 .environmentObject(model.player)
                 .preferredColorScheme(.dark)
+                .touchDefaults()
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

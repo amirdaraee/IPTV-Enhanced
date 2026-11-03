@@ -135,11 +135,11 @@ struct VodBrowserView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            HStack(alignment: .top, spacing: 30) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(kind == .movie ? "Movies" : "Series").font(.title2.weight(.bold)).padding(.leading, 22).padding(.bottom, 12)
+            HStack(alignment: .top, spacing: 30.ui) {
+                VStack(alignment: .leading, spacing: 6.ui) {
+                    Text(kind == .movie ? "Movies" : "Series").font(.title2.weight(.bold)).padding(.leading, 22.ui).padding(.bottom, 12.ui)
                     ScrollView(showsIndicators: false) {
-                        VStack(spacing: 6) {
+                        VStack(spacing: 6.ui) {
                             ForEach(model.groups, id: \.id) { g in
                                 Button {
                                     gate.run(app.core, locked: g.locked, title: g.name) { Task { await model.select(g) } }
@@ -150,10 +150,10 @@ struct VodBrowserView: View {
                                 .focused($focus, equals: .group(g.id))
                             }
                         }
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 10.ui)
                     }
                 }
-                .frame(width: 440)
+                .frame(width: 440.ui)
                 .focusSection()
 
                 if model.loaded && model.groups.isEmpty {
@@ -166,7 +166,7 @@ struct VodBrowserView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 40, alignment: .top)], alignment: .leading, spacing: 50) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230.ui), spacing: 40.ui, alignment: .top)], alignment: .leading, spacing: 50.ui) {
                             ForEach(model.items) { item in
                                 Button { open(item) } label: { PosterCard(item: item) }
                                     .buttonStyle(.borderless)
@@ -175,7 +175,7 @@ struct VodBrowserView: View {
                                     .onAppear { model.loadMoreIfNeeded(item) }
                             }
                         }
-                        .padding(40)
+                        .padding(40.ui)
                     }
                     .focusSection()
                 }
@@ -240,23 +240,23 @@ struct PosterCard: View {
     @Environment(\.isFocused) private var focused
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12.ui) {
             ZStack(alignment: .bottom) {
-                Artwork(url: item.image, title: item.title, fontSize: 40)
+                Artwork(url: item.image, title: item.title, fontSize: 40.ui)
                 if case let .resume(p) = item {
-                    ProgressLine(fraction: Double(p.fraction)).padding(12)
+                    ProgressLine(fraction: Double(p.fraction)).padding(12.ui)
                 }
                 if isFavorite {
-                    Text("★").foregroundStyle(Palette.warning).padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    Text("★").foregroundStyle(Palette.warning).padding(12.ui).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
             }
-            .frame(width: 230, height: 345)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(focused ? Palette.accent : .clear, lineWidth: 4))
+            .frame(width: 230.ui, height: 345.ui)
+            .clipShape(RoundedRectangle(cornerRadius: 14.ui))
+            .overlay(RoundedRectangle(cornerRadius: 14.ui).stroke(focused ? Palette.accent : .clear, lineWidth: 4.ui))
             .scaleEffect(focused ? 1.08 : 1)
-            .shadow(color: .black.opacity(focused ? 0.5 : 0), radius: 20, y: 10)
+            .shadow(color: .black.opacity(focused ? 0.5 : 0), radius: 20.ui, y: 10.ui)
             .animation(.easeOut(duration: 0.15), value: focused)
-            Text(item.title).font(.callout.weight(.medium)).lineLimit(2).frame(width: 230, alignment: .leading)
+            Text(item.title).font(.callout.weight(.medium)).lineLimit(2).frame(width: 230.ui, alignment: .leading)
             Text(subtitle).font(.caption).foregroundStyle(Palette.textDim).lineLimit(1)
         }
     }
@@ -291,10 +291,11 @@ struct MovieDetailView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Backdrop(url: details?.backdrop ?? movie.poster)
-            HStack(alignment: .top, spacing: 60) {
-                Artwork(url: movie.poster, title: movie.name, fontSize: 60)
-                    .frame(width: 360, height: 540).clipShape(RoundedRectangle(cornerRadius: 18))
-                VStack(alignment: .leading, spacing: 18) {
+            TouchScroll {
+            HStack(alignment: .top, spacing: 60.ui) {
+                Artwork(url: movie.poster, title: movie.name, fontSize: 60.ui)
+                    .frame(width: 360.ui, height: 540.ui).clipShape(RoundedRectangle(cornerRadius: 18.ui))
+                VStack(alignment: .leading, spacing: 18.ui) {
                     Text(movie.name).font(.largeTitle.weight(.bold)).lineLimit(2)
                     Text([movie.year, details?.genre, details?.durationSecs.map { Fmt.minutes($0.int64Value) },
                           movie.rating.map { String(format: "★ %.1f", $0.doubleValue) }].compactMap { $0 }.joined(separator: "  ·  "))
@@ -303,12 +304,12 @@ struct MovieDetailView: View {
                     if let d = details?.director { Text("Director: \(d)").font(.callout).foregroundStyle(Palette.textDim) }
                     if let c = details?.cast { Text("Cast: \(c)").font(.callout).foregroundStyle(Palette.textDim).lineLimit(2) }
                     if let p = details?.progress, !p.watched {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ProgressLine(fraction: Double(p.fraction)).frame(width: 420)
+                        VStack(alignment: .leading, spacing: 6.ui) {
+                            ProgressLine(fraction: Double(p.fraction)).frame(width: 420.ui)
                             Text("\(Fmt.duration(p.positionMs)) of \(Fmt.duration(p.durationMs))").font(.caption).foregroundStyle(Palette.textDim)
                         }
                     }
-                    HStack(spacing: 30) {
+                    HStack(spacing: 30.ui) {
                         let resumable = details?.progress.map { !$0.watched } ?? false
                         Button(resumable ? "Resume" : "Play") { play(fromStart: false) }
                         if resumable { Button("Play from start") { play(fromStart: true) } }
@@ -319,11 +320,12 @@ struct MovieDetailView: View {
                             }
                         }
                     }
-                    .padding(.top, 10)
+                    .padding(.top, 10.ui)
                     if let message { Text(message).foregroundStyle(Palette.live) }
                 }
             }
-            .padding(80)
+            .padding(80.ui)
+            }
         }
         .task {
             favorite = movie.favorite
@@ -367,11 +369,11 @@ struct SeriesDetailView: View {
         ZStack(alignment: .topLeading) {
             Backdrop(url: details?.backdrop ?? series.cover)
             ScrollView {
-                VStack(alignment: .leading, spacing: 30) {
-                    HStack(alignment: .top, spacing: 40) {
-                        Artwork(url: series.cover, title: series.name, fontSize: 40)
-                            .frame(width: 200, height: 300).clipShape(RoundedRectangle(cornerRadius: 14))
-                        VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 30.ui) {
+                    HStack(alignment: .top, spacing: 40.ui) {
+                        Artwork(url: series.cover, title: series.name, fontSize: 40.ui)
+                            .frame(width: 200.ui, height: 300.ui).clipShape(RoundedRectangle(cornerRadius: 14.ui))
+                        VStack(alignment: .leading, spacing: 14.ui) {
                             Text(series.name).font(.largeTitle.weight(.bold)).lineLimit(1)
                             Text([series.year, details?.genre, details.map { "\($0.seasons.count) season\($0.seasons.count == 1 ? "" : "s")" }]
                                 .compactMap { $0 }.joined(separator: "  ·  ")).foregroundStyle(Palette.textDim)
@@ -387,17 +389,17 @@ struct SeriesDetailView: View {
                     if let error { Text(error).foregroundStyle(Palette.live) }
                     if let d = details {
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 20) {
+                            HStack(spacing: 20.ui) {
                                 ForEach(d.seasons.map { $0.int32Value }, id: \.self) { s in
                                     Button("Season \(s)") { season = s }
                                         .buttonStyle(RowButtonStyle(selected: s == season))
                                         .fixedSize()
                                 }
                             }
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 10.ui)
                         }
                         .focusSection()
-                        LazyVStack(spacing: 16) {
+                        LazyVStack(spacing: 16.ui) {
                             ForEach(d.episodes.filter { $0.season == season }, id: \.remoteId) { e in
                                 Button { play(e) } label: { EpisodeRow(episode: e) }
                                     .buttonStyle(RowButtonStyle())
@@ -408,7 +410,7 @@ struct SeriesDetailView: View {
                         ProgressView()
                     }
                 }
-                .padding(80)
+                .padding(80.ui)
             }
         }
         .task { await load() }
@@ -444,13 +446,13 @@ private struct EpisodeRow: View {
     let episode: Episode
 
     var body: some View {
-        HStack(spacing: 30) {
+        HStack(spacing: 30.ui) {
             ZStack(alignment: .bottom) {
-                Artwork(url: episode.image, title: episode.title, fontSize: 22)
-                if let p = episode.progress { ProgressLine(fraction: Double(p.fraction)).padding(8) }
+                Artwork(url: episode.image, title: episode.title, fontSize: 22.ui)
+                if let p = episode.progress { ProgressLine(fraction: Double(p.fraction)).padding(8.ui) }
             }
-            .frame(width: 240, height: 135).clipShape(RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 6) {
+            .frame(width: 240.ui, height: 135.ui).clipShape(RoundedRectangle(cornerRadius: 10.ui))
+            VStack(alignment: .leading, spacing: 6.ui) {
                 Text("\(episode.episode). \(episode.title)").font(.headline).lineLimit(1)
                 Text([episode.durationSecs.map { Fmt.minutes($0.int64Value) }, episode.progress?.watched == true ? "Watched" : nil]
                     .compactMap { $0 }.joined(separator: "  ·  ")).font(.caption).foregroundStyle(Palette.textDim)
@@ -468,7 +470,8 @@ struct Backdrop: View {
     var body: some View {
         ZStack {
             if let url, let u = URL(string: url) {
-                CachedImage(url: u, maxPixels: 1920, contentMode: .fill).opacity(0.35)
+                // In an overlay: filling the screen must not make the page around it wider than the screen.
+                Color.clear.overlay { CachedImage(url: u, maxPixels: 1920, contentMode: .fill).opacity(0.35) }.clipped()
             }
             LinearGradient(colors: [Palette.background, Palette.background.opacity(0.85), .clear], startPoint: .leading, endPoint: .trailing)
             LinearGradient(colors: [.clear, Palette.background], startPoint: .top, endPoint: .bottom)

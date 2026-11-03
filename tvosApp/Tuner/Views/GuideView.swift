@@ -5,8 +5,8 @@ import TunerCore
 private let hour: Int64 = 3_600_000
 private let slot: Int64 = 1_800_000
 private let viewportMs: Int64 = 150 * 60_000
-private let channelWidth: CGFloat = 330
-private let rowHeight: CGFloat = 86
+private let channelWidth: CGFloat = 330.ui
+private let rowHeight: CGFloat = 86.ui
 
 private func align(_ t: Int64) -> Int64 { t - t % slot }
 
@@ -223,12 +223,12 @@ struct GuideView: View {
     private let ticker = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack(spacing: 40) {
+        HStack(spacing: 40.ui) {
             groupsPanel
             GeometryReader { geo in
-                let msPerPoint = Double(viewportMs) / Double(geo.size.width - channelWidth - 16)
-                VStack(spacing: 0) {
-                    GuideHeader(model: model, now: now)
+                let msPerPoint = Double(viewportMs) / Double(geo.size.width - channelWidth - 16.ui)
+                VStack(spacing: 0.ui) {
+                    GuideHeader(model: model, now: now) { ch in watch(ch) }
                     ruler(msPerPoint: msPerPoint)
                     if model.loaded && model.channels.isEmpty {
                         EmptyStateView(
@@ -244,7 +244,7 @@ struct GuideView: View {
             }
         }
         .background(Palette.background)
-        .overlay(alignment: .bottom) { if let message { Toast(text: message).padding(.bottom, 40) } }
+        .overlay(alignment: .bottom) { if let message { Toast(text: message).padding(.bottom, 40.ui) } }
         // Back steps out one level: grid → channel name → group list → tab bar (system default).
         .onExitCommand(perform: inGroups ? nil : back)
         .onChange(of: focus) { old, f in
@@ -300,23 +300,23 @@ struct GuideView: View {
 
     private func ruler(msPerPoint: Double) -> some View {
         ZStack(alignment: .leading) {
-            Text(Fmt.day(model.windowStart)).font(.caption).foregroundStyle(Palette.textDim).padding(.leading, 40)
+            Text(Fmt.day(model.windowStart)).font(.caption).foregroundStyle(Palette.textDim).padding(.leading, 40.ui)
             ForEach(0..<Int(viewportMs / slot), id: \.self) { i in
                 let t = model.windowStart + Int64(i) * slot
-                HStack(spacing: 8) {
-                    Rectangle().fill(Palette.outline).frame(width: 2, height: 18)
+                HStack(spacing: 8.ui) {
+                    Rectangle().fill(Palette.outline).frame(width: 2.ui, height: 18.ui)
                     Text(Fmt.time(t)).font(.caption).foregroundStyle(now >= t && now < t + slot ? Palette.accent : Palette.textDim)
                 }
-                .offset(x: channelWidth + 8 + CGFloat(Double(t - model.windowStart) / msPerPoint))
+                .offset(x: channelWidth + 8.ui + CGFloat(Double(t - model.windowStart) / msPerPoint))
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 44.ui, maxHeight: 44.ui, alignment: .leading)
     }
 
     private func grid(msPerPoint: Double) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: 8.ui) {
                     // Identity by index keeps diffing cheap for 20k-channel lineups (no id
                     // walk over every Kotlin object on each update), and equatable rows mean
                     // a remote press only re-renders the rows whose focus actually changed.
@@ -330,6 +330,7 @@ struct GuideView: View {
                             now: now,
                             focusedRow: model.focusedChannel?.id == ch.id,
                             playing: engine.current?.channelId?.int64Value == ch.id,
+                            selectedStart: UI.touch && model.focusedChannel?.id == ch.id ? model.focusedProgramme?.start : nil,
                             focus: $focus,
                             activate: activate,
                             watch: watch,
@@ -341,9 +342,10 @@ struct GuideView: View {
                         .onAppear { model.ensureLoaded(ch) }
                     }
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, 12.ui)
             }
             .overlay(alignment: .topLeading) { nowLine(msPerPoint: msPerPoint) }
+            .timeSwipe(enabled: active && !fullscreen && catchup == nil, slotWidth: CGFloat(Double(slot) / msPerPoint)) { model.shiftWindow(by: Int64($0) * slot) }
             .onChange(of: model.group?.id) { _, _ in
                 if let first = model.channels.first { proxy.scrollTo(first.id, anchor: .top) }
             }
@@ -358,8 +360,8 @@ struct GuideView: View {
     @ViewBuilder
     private func nowLine(msPerPoint: Double) -> some View {
         if now >= model.windowStart && now < model.windowStart + viewportMs {
-            Rectangle().fill(Palette.live.opacity(0.85)).frame(width: 3)
-                .offset(x: channelWidth + 8 + CGFloat(Double(now - model.windowStart) / msPerPoint))
+            Rectangle().fill(Palette.live.opacity(0.85)).frame(width: 3.ui)
+                .offset(x: channelWidth + 8.ui + CGFloat(Double(now - model.windowStart) / msPerPoint))
                 .allowsHitTesting(false)
         }
     }
@@ -503,7 +505,13 @@ struct GuideView: View {
     }
 
     private func activate(_ ch: Channel, _ p: Programme?) {
+        if UI.justSwiped { return }
         let t = Fmt.nowMs()
+        // Touch has no focus to follow: the tapped programme is what the header shows.
+        if UI.touch {
+            model.focusedChannel = ch
+            model.focusedProgramme = p
+        }
         gate.run(app.core, locked: ch.locked, title: ch.name) {
             if let p, p.stop <= t, ch.hasCatchup {
                 playCatchup(ch, p)
@@ -594,15 +602,19 @@ struct GuideView: View {
     // MARK: groups panel
 
     private var groupsPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Groups").font(.title3.weight(.semibold)).padding(.leading, 22).padding(.bottom, 10)
+        VStack(alignment: .leading, spacing: 8.ui) {
+            Text("Groups").font(.title3.weight(.semibold)).padding(.leading, 22.ui).padding(.bottom, 10.ui)
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 6) {
+                VStack(spacing: 6.ui) {
                     ForEach(model.groups, id: \.id) { g in
                         Button {
                             gate.run(app.core, locked: g.locked, title: g.name) {
                                 Task {
                                     await model.select(g)
+                                    if UI.touch {
+                                        model.focusedChannel = nil
+                                        model.focusedProgramme = nil
+                                    }
                                     if let first = model.channels.first {
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { focusChannel(first.id) }
                                     }
@@ -622,15 +634,18 @@ struct GuideView: View {
                         .contextMenu { groupMenu(g) }
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 10.ui)
+                .padding(.bottom, 10.ui)
             }
         }
-        .padding(.top, 24)
-        .frame(width: 340)
+        .padding(.top, 24.ui)
+        .frame(width: 340.ui)
         .frame(maxHeight: .infinity)
         // A shaped background stays inside the safe area, so the panel starts below the tab bar.
-        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20))
-        .padding(.top, 20)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: 20.ui))
+        // A scroll view doesn't clip on tvOS, so rows would otherwise run past the bottom of the panel.
+        .clipShape(RoundedRectangle(cornerRadius: 20.ui))
+        .padding(.top, 20.ui)
         .focusSection()
         .defaultFocus($focus, model.group.map { .group($0.id) })
     }
@@ -702,12 +717,14 @@ struct IdentifiedRequest: Identifiable {
 private struct GuideHeader: View {
     @ObservedObject var model: GuideModel
     let now: Int64
+    /// Touch: tapping the preview opens the channel fullscreen.
+    let watch: (Channel) -> Void
     @EnvironmentObject private var engine: PlayerEngine
 
     var body: some View {
-        HStack(alignment: .top, spacing: 40) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 40.ui) {
+            VStack(alignment: .leading, spacing: 10.ui) {
+                HStack(spacing: 10.ui) {
                     Text(model.group?.name ?? "").foregroundStyle(Palette.accent)
                     if let ch = model.focusedChannel {
                         Text(verbatim: "·  \(ch.number == nil ? "" : Fmt.number(ch.number) + "  ")\(ch.name)").foregroundStyle(Palette.textDim).lineLimit(1)
@@ -719,15 +736,17 @@ private struct GuideHeader: View {
                 Text(model.focusedProgramme?.title ?? model.focusedChannel?.name ?? "")
                     .font(.title2.weight(.semibold)).lineLimit(1)
                 if let p = model.focusedProgramme {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 12.ui) {
                         if p.isLive(now: now) { Pill(text: "LIVE", background: Palette.live.opacity(0.2), foreground: Palette.live) }
                         else if p.stop <= now, model.focusedChannel?.hasCatchup == true { Pill(text: "CATCH-UP") }
                         Text([Fmt.range(p.start, p.stop), p.episodeNum, p.category].compactMap { $0 }.joined(separator: "  ·  "))
                             .foregroundStyle(Palette.textDim)
                     }
                     .font(.callout)
-                    if p.isLive(now: now) { ProgressLine(fraction: Double(p.progress(now: now))).frame(width: 340) }
-                    Text(p.description_ ?? "").font(.callout).foregroundStyle(Palette.textDim).lineLimit(3)
+                    if p.isLive(now: now) { ProgressLine(fraction: Double(p.progress(now: now))).frame(width: 340.ui) }
+                    if !UI.phone {
+                        Text(p.description_ ?? "").font(.callout).foregroundStyle(Palette.textDim).lineLimit(3)
+                    }
                 } else if model.focusedChannel != nil {
                     Text("No programme information").foregroundStyle(Palette.textDim)
                 }
@@ -737,18 +756,23 @@ private struct GuideHeader: View {
                 Color.black
                 if engine.current?.isLive == true {
                     VideoSurface(player: engine.player)
-                    if let s = engine.status { Text(s).font(.caption).padding(8).frame(maxHeight: .infinity, alignment: .bottom) }
+                    if let s = engine.status { Text(s).font(.caption).padding(8.ui).frame(maxHeight: .infinity, alignment: .bottom) }
                 } else {
-                    Text("Select a programme to preview").font(.callout).foregroundStyle(Palette.textDim)
+                    Text(UI.touch ? "Tap a programme to preview" : "Select a programme to preview").font(.callout).foregroundStyle(Palette.textDim)
                 }
             }
-            .frame(width: 480, height: 270)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.outline))
+            .frame(width: 480.ui, height: 270.ui)
+            .clipShape(RoundedRectangle(cornerRadius: 16.ui))
+            .overlay(RoundedRectangle(cornerRadius: 16.ui).stroke(Palette.outline))
+            .onTapGesture {
+                guard UI.touch, engine.current?.isLive == true,
+                      let ch = model.channels.first(where: { $0.id == engine.current?.channelId?.int64Value }) else { return }
+                watch(ch)
+            }
         }
-        .padding(.horizontal, 40)
-        .padding(.top, 20)
-        .frame(height: 320)
+        .padding(.horizontal, 40.ui)
+        .padding(.top, 20.ui)
+        .frame(height: 320.ui)
     }
 }
 
@@ -762,6 +786,8 @@ private struct GuideRowView: View, Equatable {
     let now: Int64
     let focusedRow: Bool
     let playing: Bool
+    /// Touch: the start of the programme last tapped in this row.
+    let selectedStart: Int64?
     let focus: FocusState<GuideFocus?>.Binding
     let activate: (Channel, Programme?) -> Void
     let watch: (Channel) -> Void
@@ -770,33 +796,33 @@ private struct GuideRowView: View, Equatable {
 
     static func == (a: Self, b: Self) -> Bool {
         a.channel == b.channel && a.programmes == b.programmes && a.windowStart == b.windowStart
-            && a.msPerPoint == b.msPerPoint && a.now == b.now && a.focusedRow == b.focusedRow && a.playing == b.playing
+            && a.msPerPoint == b.msPerPoint && a.now == b.now && a.focusedRow == b.focusedRow && a.playing == b.playing && a.selectedStart == b.selectedStart
     }
 
     var body: some View {
         let ch = channel
-        HStack(spacing: 0) {
+        HStack(spacing: 0.ui) {
             // OK on the channel name plays it live in fullscreen, whatever part of the grid is showing.
             Button { watch(ch) } label: {
                 ChannelLabel(channel: ch, playing: playing)
             }
             .buttonStyle(ChannelCellStyle(focusedRow: focusedRow))
-            .frame(width: channelWidth - 8, height: rowHeight)
+            .frame(width: channelWidth - 8.ui, height: rowHeight)
             .focused(focus, equals: .channel(ch.id))
             .onMoveCommand { if $0 == .left { openGroups() } }
             .contextMenu { menu(ch, nil) }
 
             // Invisible edge targets: reaching them scrolls the time window.
-            Color.clear.frame(width: 8, height: rowHeight).focusable().focused(focus, equals: .left(ch.id))
+            Color.clear.frame(width: 8.ui, height: rowHeight).focusable().focused(focus, equals: .left(ch.id))
 
-            HStack(spacing: 0) {
+            HStack(spacing: 0.ui) {
                 ForEach(guideSegments(programmes, windowStart: windowStart)) { seg in
                     segmentView(seg)
                 }
             }
             .frame(height: rowHeight)
 
-            Color.clear.frame(width: 4, height: rowHeight).focusable().focused(focus, equals: .right(ch.id))
+            Color.clear.frame(width: 4.ui, height: rowHeight).focusable().focused(focus, equals: .right(ch.id))
         }
     }
 
@@ -804,26 +830,26 @@ private struct GuideRowView: View, Equatable {
     private func segmentView(_ seg: GuideSegment) -> some View {
         switch seg {
         case let .programme(p, width):
-            let w = max(CGFloat(Double(width) / msPerPoint) - 4, 4)
+            let w = max(CGFloat(Double(width) / msPerPoint) - 4.ui, 4.ui)
             Button { activate(channel, p) } label: {
-                ProgrammeCell(programme: p, channel: channel, now: now, width: w)
+                ProgrammeCell(programme: p, channel: channel, now: now, width: w, selected: selectedStart == p.start)
             }
-            .buttonStyle(GuideCellStyle(live: p.isLive(now: now)))
+            .buttonStyle(GuideCellStyle(live: p.isLive(now: now), selected: selectedStart == p.start))
             .frame(width: w, height: rowHeight)
-            .padding(.trailing, 4)
+            .padding(.trailing, 4.ui)
             .focused(focus, equals: .cell(channel.id, seg.id))
             .contextMenu { menu(channel, p) }
         case let .gap(_, width, label):
-            let w = max(CGFloat(Double(width) / msPerPoint) - 4, 4)
+            let w = max(CGFloat(Double(width) / msPerPoint) - 4.ui, 4.ui)
             if label.isEmpty && programmes != nil {
-                Color.clear.frame(width: w + 4, height: rowHeight)
+                Color.clear.frame(width: w + 4.ui, height: rowHeight)
             } else {
                 Button { activate(channel, nil) } label: {
                     GapLabel(text: label)
                 }
                 .buttonStyle(GuideCellStyle(live: false))
                 .frame(width: w, height: rowHeight)
-                .padding(.trailing, 4)
+                .padding(.trailing, 4.ui)
                 .focused(focus, equals: .cell(channel.id, seg.id))
                 .contextMenu { menu(channel, nil) }
             }
@@ -838,16 +864,16 @@ private struct ChannelLabel: View {
 
     var body: some View {
         let ch = channel
-        HStack(spacing: 14) {
+        HStack(spacing: 14.ui) {
             Text(verbatim: Fmt.number(ch.number)).font(.callout)
                 .foregroundStyle(focused ? Palette.onAccent : (playing ? Palette.accent : Palette.textDim))
-                .lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
-            Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16)
-                .frame(width: 70, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 2) {
+                .lineLimit(1).fixedSize().frame(minWidth: 56.ui, alignment: .leading)
+            Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 16.ui)
+                .frame(width: 70.ui, height: 50.ui).clipShape(RoundedRectangle(cornerRadius: 8.ui))
+            VStack(alignment: .leading, spacing: 2.ui) {
                 Text(ch.name).font(.callout.weight(.medium)).lineLimit(1)
                     .foregroundStyle(focused ? Palette.onAccent : (playing ? Palette.accent : Palette.text))
-                HStack(spacing: 6) {
+                HStack(spacing: 6.ui) {
                     if ch.favorite { Text("★").foregroundStyle(focused ? Palette.onAccent : Palette.warning) }
                     if ch.hasCatchup { Image(systemName: "clock.arrow.circlepath").foregroundStyle(focused ? Palette.onAccent : Palette.accent) }
                     if ch.locked { Image(systemName: "lock.fill") }
@@ -856,7 +882,7 @@ private struct ChannelLabel: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 16.ui)
     }
 }
 
@@ -868,8 +894,9 @@ private struct ChannelCellStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 12).fill(focused ? Palette.accent : (focusedRow ? Palette.surfaceFocus : Palette.surface)))
+            .background(RoundedRectangle(cornerRadius: 12.ui).fill(focused ? Palette.accent : (focusedRow ? Palette.surfaceFocus : Palette.surface)))
             .foregroundStyle(focused ? Palette.onAccent : Palette.text)
+            .opacity(configuration.isPressed ? 0.6 : 1)
     }
 }
 
@@ -878,29 +905,31 @@ private struct ProgrammeCell: View {
     let channel: Channel
     let now: Int64
     let width: CGFloat
-    @Environment(\.isFocused) private var focused
+    var selected = false
+    @Environment(\.isFocused) private var isFocused
+    private var focused: Bool { isFocused || selected }
 
     var body: some View {
         let past = programme.stop <= now
         let catchup = channel.hasCatchup && past && programme.start > now - Int64(channel.catchupDays) * 24 * hour
         ZStack(alignment: .bottomLeading) {
-            if width > 50 {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
+            if width > 50.ui {
+                VStack(alignment: .leading, spacing: 2.ui) {
+                    HStack(spacing: 6.ui) {
                         if catchup { Image(systemName: "clock.arrow.circlepath").font(.caption2) }
                         Text(programme.title).font(.callout.weight(.medium)).lineLimit(1)
                     }
-                    if width > 120 {
+                    if width > 120.ui {
                         Text(Fmt.time(programme.start)).font(.caption2).opacity(0.7)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 16.ui)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .opacity(past && !catchup && !focused ? 0.6 : 1)
             }
             if programme.isLive(now: now) {
-                ProgressLine(fraction: Double(programme.progress(now: now)), color: focused ? Palette.onAccent : Palette.accent, height: 3)
-                    .padding(.horizontal, 12).padding(.bottom, 8)
+                ProgressLine(fraction: Double(programme.progress(now: now)), color: focused ? Palette.onAccent : Palette.accent, height: 3.ui)
+                    .padding(.horizontal, 12.ui).padding(.bottom, 8.ui)
             }
         }
     }
@@ -913,19 +942,22 @@ private struct GapLabel: View {
 
     var body: some View {
         Text(text).font(.callout).foregroundStyle(focused ? Palette.onAccent : Palette.textDim)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).padding(.horizontal, 18.ui)
     }
 }
 
 /// Programme cells: flat surfaces that turn accent-coloured when focused (no lift, so the grid stays aligned).
 private struct GuideCellStyle: ButtonStyle {
     let live: Bool
-    @Environment(\.isFocused) private var focused
+    var selected = false
+    @Environment(\.isFocused) private var isFocused
+    private var focused: Bool { isFocused || selected }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 10).fill(focused ? Palette.accent : (live ? Palette.surfaceHigh : Palette.surface)))
+            .background(RoundedRectangle(cornerRadius: 10.ui).fill(focused ? Palette.accent : (live ? Palette.surfaceHigh : Palette.surface)))
             .foregroundStyle(focused ? Palette.onAccent : Palette.text)
+            .opacity(configuration.isPressed ? 0.6 : 1)
     }
 }

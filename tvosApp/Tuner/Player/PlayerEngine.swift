@@ -20,6 +20,8 @@ final class PlayerEngine: ObservableObject {
     private var sleepTask: Task<Void, Never>?
 
     private var retries = 0
+    /// Retries ran out; the item is kept (removing it leaves the system player's spinner up) but must not be reused.
+    private var gaveUp = false
     /// False only while the user has paused; stalled live streams auto-resume otherwise.
     private var wantsPlayback = true
     /// URL actually being played; may differ from the request's when a .ts stream is swapped for HLS.
@@ -28,30 +30,38 @@ final class PlayerEngine: ObservableObject {
     private var notificationTokens: [NSObjectProtocol] = []
     private var timeControlObserver: NSKeyValueObservation?
     private var stallTask: Task<Void, Never>?
-    private static let maxRetries = 5
+    private var retryTask: Task<Void, Never>?
+    private var healthyTask: Task<Void, Never>?
+    private static let maxRetries = 3
+    /// `AVError.fileFormatNotRecognized`: the file is reachable but this player can't read it (MKV, AVI).
+    private static let unsupportedFormatCode = -11828
     private static let defaultUserAgent = "Tuner/0.1 (open-source IPTV player)"
 
     init() {
+        #if os(iOS)
+        // Otherwise the phone's silent switch mutes the picture's sound.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         player.automaticallyWaitsToMinimizeStalling = true
         timeControlObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.isBuffering = self.isStalled
-                if p.timeControlStatus == .playing {
-                    self.retries = 0
-                    self.status = nil
-                }
+                self.noteIfPlaying()
                 self.watchStall()
             }
         }
     }
 
     func play(_ request: PlaybackRequest) {
-        if current?.url == request.url, player.currentItem != nil, player.currentItem?.status != .failed {
+        if current?.url == request.url, player.currentItem != nil, player.currentItem?.status != .failed, !gaveUp {
             current = request
             player.play()
             return
         }
+        cancelRetries()
+        gaveUp = false
         current = request
         retries = 0
         status = nil
@@ -111,7 +121,8 @@ final class PlayerEngine: ObservableObject {
 
     func stop() {
         activeURL = nil
-        stallTask?.cancel()
+        gaveUp = false
+        cancelRetries()
         clearItemObservers()
         current = nil
         status = nil
@@ -155,17 +166,18 @@ final class PlayerEngine: ObservableObject {
         })
         itemObservers.append(item.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor in
-                if item.status == .failed { self?.scheduleRetry(item.error?.localizedDescription ?? "Playback failed") }
+                if item.status == .failed { self?.scheduleRetry(item.error, fallback: "Playback failed") }
+                if item.status == .readyToPlay { self?.noteIfPlaying() }
             }
         })
         let center = NotificationCenter.default
         notificationTokens.append(center.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { [weak self] note in
-            let err = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
-            Task { @MainActor in self?.scheduleRetry(err ?? "Stream interrupted") }
+            let err = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? NSError
+            Task { @MainActor in self?.scheduleRetry(err, fallback: "Stream interrupted") }
         })
         if request.isLive {
             notificationTokens.append(center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.scheduleRetry("Stream ended") }
+                Task { @MainActor in self?.scheduleRetry(nil, fallback: "Stream ended") }
             })
         }
     }
@@ -177,9 +189,10 @@ final class PlayerEngine: ObservableObject {
         notificationTokens.removeAll()
     }
 
-    private func scheduleRetry(_ reason: String) {
-        guard let request = current else { return }
-        NSLog("[Tuner] playback problem: %@", reason)
+    private func scheduleRetry(_ error: Error?, fallback: String) {
+        guard let request = current, retryTask == nil else { return }
+        stallTask?.cancel()
+        NSLog("[Tuner] playback problem: %@", error?.localizedDescription ?? fallback)
         // A raw .ts stream that AVPlayer rejected: try the panel's HLS variant once before backing off.
         if retries == 0, let current = activeURL, let hls = Self.hlsVariant(current), hls != current {
             activeURL = hls
@@ -187,19 +200,62 @@ final class PlayerEngine: ObservableObject {
             retries = 1
             return
         }
+        if let error, Self.isUnsupportedFormat(error) {
+            giveUp("This video format isn't supported on this device.")
+            return
+        }
         guard retries < Self.maxRetries else {
-            status = "Playback failed: \(reason)"
+            giveUp(request.isLive ? "This channel isn't available right now." : "This video isn't available right now.")
             return
         }
         let delay = UInt64(1 << retries) * 1_000_000_000
         retries += 1
         status = "Reconnecting… (\(retries)/\(Self.maxRetries))"
-        Task { @MainActor in
+        retryTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: delay)
-            guard self.current === request else { return }
+            guard !Task.isCancelled, self.current === request else { return }
+            self.retryTask = nil
             let position = request.isLive ? 0 : Int64(self.player.currentTime().seconds * 1000)
             self.prepare(request, startMs: max(0, position))
         }
+    }
+
+    /// AVPlayer reports `.playing` as soon as it is asked to play, even for a stream it hasn't reached,
+    /// so only a ready item clears the message, and only sustained playback earns back the retries.
+    /// Otherwise a stream that keeps failing would never run out of them.
+    private func noteIfPlaying() {
+        healthyTask?.cancel()
+        guard player.timeControlStatus == .playing, player.currentItem?.status == .readyToPlay else { return }
+        status = nil
+        healthyTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled else { return }
+            self.retries = 0
+        }
+    }
+
+    /// Stops trying and leaves the reason on screen; choosing the channel again starts afresh.
+    private func giveUp(_ message: String) {
+        cancelRetries()
+        clearItemObservers()
+        gaveUp = true
+        wantsPlayback = false
+        status = message
+        isBuffering = false
+        player.pause()
+    }
+
+    private func cancelRetries() {
+        stallTask?.cancel()
+        healthyTask?.cancel()
+        retryTask?.cancel()
+        retryTask = nil
+    }
+
+    private static func isUnsupportedFormat(_ error: Error) -> Bool {
+        let e = error as NSError
+        if e.domain == AVFoundationErrorDomain, e.code == unsupportedFormatCode { return true }
+        return (e.userInfo[NSUnderlyingErrorKey] as? Error).map(isUnsupportedFormat) ?? false
     }
 
     /// Waiting for data, or, for live (which doesn't wait to minimise stalls), dropped to paused
@@ -219,7 +275,7 @@ final class PlayerEngine: ObservableObject {
         stallTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 10_000_000_000)
             guard !Task.isCancelled, self.isStalled else { return }
-            self.scheduleRetry("Stream stalled")
+            self.scheduleRetry(nil, fallback: "Stream stalled")
         }
     }
 

@@ -30,7 +30,7 @@ struct SourceEditView: View {
         ZStack {
             Palette.background.ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 28.ui) {
                     Text(sourceId == nil ? "Add a playlist" : "Edit playlist").font(.largeTitle.weight(.bold))
                     Text("IPTV Enhanced plays content from your own provider. It doesn't include any channels.")
                         .foregroundStyle(Palette.textDim)
@@ -39,14 +39,14 @@ struct SourceEditView: View {
                         Text("M3U playlist URL").tag(SourceType.m3u)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 900)
+                    .frame(maxWidth: 900.ui)
 
                     field("Name (optional)", text: $name, prompt: "My provider")
                     if type == .xtream {
                         field("Server", text: $url, prompt: "http://provider.example:8080", keyboard: .URL)
-                        HStack(spacing: 30) {
+                        HStack(spacing: 30.ui) {
                             field("Username", text: $username, prompt: "")
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 8.ui) {
                                 Text("Password").font(.caption).foregroundStyle(Palette.textDim)
                                 SecureField("", text: $password)
                             }
@@ -58,10 +58,10 @@ struct SourceEditView: View {
                           text: $epgUrl, prompt: "http://example/epg.xml.gz", keyboard: .URL)
                     // Down from the last row goes to the main button; the nearest one under the wide
                     // User-Agent field would be Cancel.
-                    HStack(spacing: 30) {
+                    HStack(spacing: 30.ui) {
                         field("Custom User-Agent (optional)", text: $userAgent, prompt: "")
                         field("Guide time shift (hours)", text: $offsetHours, prompt: "0", keyboard: .numbersAndPunctuation)
-                            .frame(width: 420)
+                            .frame(width: 420.ui)
                     }
                     .onMoveCommand { if $0 == .down, !busy { saveFocused = true } }
 
@@ -69,20 +69,20 @@ struct SourceEditView: View {
                     if let info { Text(info).foregroundStyle(Palette.accent) }
 
                     if busy {
-                        HStack(spacing: 20) {
+                        HStack(spacing: 20.ui) {
                             ProgressView()
                             Text(progressText).foregroundStyle(Palette.textDim)
                         }
                     } else {
-                        HStack(spacing: 30) {
+                        HStack(spacing: 30.ui) {
                             Button(sourceId == nil ? "Add playlist" : "Save") { Task { await save() } }
                                 .focused($saveFocused)
                             Button("Cancel") { dismiss() }
                         }
                     }
                 }
-                .padding(.horizontal, 120)
-                .padding(.vertical, 60)
+                .padding(.horizontal, 120.ui)
+                .padding(.vertical, 60.ui)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -108,7 +108,7 @@ struct SourceEditView: View {
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String, keyboard: UIKeyboardType = .default) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 8.ui) {
             Text(label).font(.caption).foregroundStyle(Palette.textDim)
             TextField(prompt, text: text)
                 .accessibilityLabel(label)

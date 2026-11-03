@@ -53,6 +53,7 @@ struct LivePlayerView: View {
             Color.black.ignoresSafeArea()
             VideoSurface(player: engine.player, gravity: fill ? .resizeAspectFill : .resizeAspect).ignoresSafeArea()
 
+            #if os(tvOS)
             // Full-screen focus target that receives remote commands while no overlay is open.
             Button { if held { held = false } else { showList = true } } label: { Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity) }
                 .buttonStyle(InvisibleButtonStyle())
@@ -76,6 +77,20 @@ struct LivePlayerView: View {
                     flashInfo()
                 }
                 .disabled(showList)
+            #else
+            // Touch: tap for the info bar and its buttons, swipe up or down to zap, hold for options.
+            Color.clear.contentShape(Rectangle())
+                .onTapGesture {
+                    if showList { showList = false }
+                    else if showInfo { infoTask?.cancel(); showInfo = false }
+                    else { flashInfo() }
+                }
+                .onLongPressGesture { showOptions = true }
+                .gesture(DragGesture(minimumDistance: 40).onEnded { v in
+                    guard abs(v.translation.height) > abs(v.translation.width) else { return }
+                    zap(v.translation.height < 0 ? 1 : -1)
+                })
+            #endif
 
             #if DEBUG
             PlayerHUD(engine: engine).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -83,7 +98,7 @@ struct LivePlayerView: View {
 
             if engine.isBuffering || engine.status != nil {
                 Text(engine.status ?? "Buffering…")
-                    .padding(24).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
+                    .padding(24.ui).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 16.ui))
             }
 
             if showInfo, let channel {
@@ -92,8 +107,10 @@ struct LivePlayerView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
+            if UI.touch && showInfo && !showList { touchBar }
+
             if showList { channelList.transition(.move(edge: .leading)) }
-            if let message { Toast(text: message).frame(maxHeight: .infinity, alignment: .top).padding(.top, 60) }
+            if let message { Toast(text: message).frame(maxHeight: .infinity, alignment: .top).padding(.top, 60.ui) }
         }
         .animation(.easeOut(duration: 0.2), value: showInfo)
         .animation(.easeOut(duration: 0.2), value: showList)
@@ -102,6 +119,7 @@ struct LivePlayerView: View {
             else if showInfo { showInfo = false }
             else { dismiss() }
         }
+        .keepsScreenOn()
         .onAppear {
             focus = .surface
             flashInfo()
@@ -170,6 +188,18 @@ struct LivePlayerView: View {
             }
         }
         Button("Cancel", role: .cancel) {}
+    }
+
+    /// What the remote's Menu, OK and hold do, as buttons, while the info bar is up.
+    private var touchBar: some View {
+        HStack(spacing: 12) {
+            CloseButton { dismiss() }
+            Spacer()
+            Button("Channels") { showList = true }
+            Button("Options") { showOptions = true }
+        }
+        .padding(.horizontal, 12)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var channelList: some View {
@@ -246,15 +276,15 @@ private struct ChannelListPanel: View {
         let channels = LiveLineup.channels
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 6) {
+                LazyVStack(spacing: 6.ui) {
                     ForEach(0..<channels.count, id: \.self) { idx in
                         let ch = channels[idx]
                         Button { select(idx, ch) } label: {
-                            HStack(spacing: 16) {
-                                Text(verbatim: Fmt.number(ch.number)).foregroundStyle(Palette.textDim).lineLimit(1).fixedSize().frame(minWidth: 56, alignment: .leading)
-                                Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14)
-                                    .frame(width: 64, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
-                                VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 16.ui) {
+                                Text(verbatim: Fmt.number(ch.number)).foregroundStyle(Palette.textDim).lineLimit(1).fixedSize().frame(minWidth: 56.ui, alignment: .leading)
+                                Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14.ui)
+                                    .frame(width: 64.ui, height: 44.ui).clipShape(RoundedRectangle(cornerRadius: 6.ui))
+                                VStack(alignment: .leading, spacing: 2.ui) {
                                     Text(ch.name).lineLimit(1)
                                     if let now = nowPlaying[ch.id], !now.isEmpty {
                                         Text(now).font(.caption).foregroundStyle(Palette.textDim).lineLimit(1)
@@ -270,11 +300,11 @@ private struct ChannelListPanel: View {
                         .onAppear { request(ch) }
                     }
                 }
-                .padding(20)
+                .padding(20.ui)
             }
-            .frame(width: 640)
+            .frame(width: 640.ui)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(LinearGradient(colors: [.black.opacity(0.95), .black.opacity(0.7), .clear], startPoint: .leading, endPoint: .trailing))
+            .background(LinearGradient(colors: [.black.opacity(0.95), .black.opacity(0.7), .clear], startPoint: .leading, endPoint: .trailing).allowsHitTesting(false))
             .onAppear {
                 if let id = current?.id {
                     proxy.scrollTo(id, anchor: .center)
@@ -312,11 +342,11 @@ private struct InfoBar: View {
         let now = Fmt.nowMs()
         let current = nowNext.first { $0.isLive(now: now) }
         let next = nowNext.first { $0.start >= (current?.stop ?? now) }
-        HStack(spacing: 30) {
-            Artwork(url: channel.logo, title: channel.name, contentMode: .fit, fontSize: 24)
-                .frame(width: 150, height: 100).clipShape(RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 14) {
+        HStack(spacing: 30.ui) {
+            Artwork(url: channel.logo, title: channel.name, contentMode: .fit, fontSize: 24.ui)
+                .frame(width: 150.ui, height: 100.ui).clipShape(RoundedRectangle(cornerRadius: 12.ui))
+            VStack(alignment: .leading, spacing: 8.ui) {
+                HStack(spacing: 14.ui) {
                     if channel.number != nil { Text(verbatim: Fmt.number(channel.number)).foregroundStyle(Palette.accent) }
                     Text(channel.name)
                     Pill(text: "LIVE", background: Palette.live.opacity(0.25), foreground: Palette.live)
@@ -327,9 +357,9 @@ private struct InfoBar: View {
                 .font(.title3.weight(.semibold))
                 if let p = current {
                     Text(p.title).font(.headline)
-                    HStack(spacing: 16) {
+                    HStack(spacing: 16.ui) {
                         Text(Fmt.range(p.start, p.stop)).foregroundStyle(Palette.textDim)
-                        ProgressLine(fraction: Double(p.progress(now: now))).frame(width: 360)
+                        ProgressLine(fraction: Double(p.progress(now: now))).frame(width: 360.ui)
                     }
                     .font(.callout)
                 } else {
@@ -341,9 +371,9 @@ private struct InfoBar: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 80)
-        .padding(.top, 80)
-        .padding(.bottom, 60)
+        .padding(.horizontal, 80.ui)
+        .padding(.top, 80.ui)
+        .padding(.bottom, 60.ui)
         .background(LinearGradient(colors: [.clear, .black.opacity(0.92)], startPoint: .top, endPoint: .bottom))
     }
 }
@@ -352,6 +382,7 @@ struct InvisibleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View { configuration.label }
 }
 
+#if os(tvOS)
 /// Calls `onHold` when the select button is held, wherever focus is, while `enabled`. The
 /// recognizer sits on the window (presses travel up from the focused view) and is removed with
 /// this view.
@@ -405,6 +436,7 @@ struct SelectHoldDetector: UIViewRepresentable {
         }
     }
 }
+#endif
 
 /// Movies, episodes and catch-up in the system player. Progress is saved every 10 s and on exit.
 /// When an episode ends, the next one plays after a short countdown; the player's menu bar has a sleep timer.
@@ -438,14 +470,28 @@ struct VodPlayerView: View {
             } else {
                 SystemPlayerView(player: engine.player, title: playing.title, subtitle: playing.subtitle, menu: sleepMenu)
                     .ignoresSafeArea()
+                CloseButton { dismiss() }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                if UI.touch {
+                    // The system player's transport bar only takes this menu on a TV.
+                    Menu { Button("Off") { engine.setSleepTimer(minutes: 0) }
+                        ForEach(SleepTimer.minutes, id: \.self) { m in Button("\(m) minutes") { engine.setSleepTimer(minutes: m) } }
+                    } label: {
+                        Image(systemName: "moon.zzz").font(.headline).frame(width: 44, height: 44)
+                            .foregroundStyle(.white).background(.black.opacity(0.55), in: Circle())
+                    }
+                    .accessibilityLabel("Sleep timer: \(SleepTimer.label(engine.sleepAt))")
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
             }
         }
         #if DEBUG
         .overlay(alignment: .topLeading) { PlayerHUD(engine: engine) }
         #endif
         .overlay(alignment: .top) {
-            if let s = engine.status, upNext == nil { Toast(text: s).padding(.top, 60) }
+            if let s = engine.status, upNext == nil { Toast(text: s).padding(.top, 60.ui) }
         }
+        .keepsScreenOn()
         .onAppear {
             current = request
             engine.play(request)
@@ -507,20 +553,20 @@ private struct UpNextCard: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Color.black.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 14.ui) {
                 Text("Up next · playing in \(countdown) s").font(.callout).foregroundStyle(Palette.textDim)
                 Text(next.title).font(.title2.weight(.semibold)).lineLimit(2)
                 if let sub = next.subtitle { Text(sub).foregroundStyle(Palette.textDim) }
-                HStack(spacing: 30) {
+                HStack(spacing: 30.ui) {
                     Button("Play now", action: play).focused($focused)
                     Button("Cancel", action: cancel)
                 }
-                .padding(.top, 10)
+                .padding(.top, 10.ui)
             }
-            .padding(40)
-            .frame(width: 760, alignment: .leading)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 24))
-            .padding(80)
+            .padding(40.ui)
+            .frame(width: 760.ui, alignment: .leading)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 24.ui))
+            .padding(80.ui)
         }
         .onAppear { focused = true }
     }
@@ -535,7 +581,7 @@ struct PlayerHUD: View {
     var body: some View {
         Group {
             if ProcessInfo.processInfo.arguments.contains("-playerHUD") {
-                Text(text).font(.system(size: 20, design: .monospaced)).padding(10).background(.black.opacity(0.7)).padding(30)
+                Text(text).font(.system(size: 20.ui, design: .monospaced)).padding(10.ui).background(.black.opacity(0.7)).padding(30.ui)
             }
         }
         .onReceive(tick) { _ in text = engine.debugSummary }

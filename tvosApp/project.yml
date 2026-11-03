@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.amirdaraee
   deploymentTarget:
     tvOS: "17.0"
+    iOS: "17.0"
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -11,7 +12,12 @@ settings:
 targets:
   Tuner:
     type: application
-    platform: tvOS
+    # One app for Apple TV, iPhone and iPad, so a person buys and updates it once.
+    platform: auto
+    supportedDestinations: [tvOS, iOS]
+    deploymentTarget:
+      tvOS: "17.0"
+      iOS: "17.0"
     sources:
       - Tuner
       # Settings → About shows these licence texts.
@@ -23,9 +29,14 @@ targets:
       path: Tuner/Info.plist
       properties:
         CFBundleDisplayName: IPTV Enhanced
-        CFBundleShortVersionString: "0.1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.2.1"
+        CFBundleVersion: "4"
         UILaunchScreen: {}
+        UIUserInterfaceStyle: Dark
+        # Landscape like a TV. Full screen because the guide doesn't fit iPad split view.
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIRequiredDeviceCapabilities: [arm64]
         # Only the system's HTTPS is used, which is exempt from export documentation.
         ITSAppUsesNonExemptEncryption: false
@@ -35,6 +46,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.amirdaraee.iptv
         ASSETCATALOG_COMPILER_APPICON_NAME: App Icon & Top Shelf Image
+        "ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphoneos*]": AppIcon
+        "ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphonesimulator*]": AppIcon
         FRAMEWORK_SEARCH_PATHS: $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
         OTHER_LDFLAGS: [-framework, TunerCore, -lsqlite3]
         SWIFT_STRICT_CONCURRENCY: minimal
@@ -58,7 +71,27 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.amirdaraee.iptv.uitests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Tuner
+  TunerTouchTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - TunerTouchTests
+    dependencies:
+      - target: Tuner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.amirdaraee.iptv.touchtests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Tuner
 schemes:
+  TunerTouch:
+    build:
+      targets:
+        Tuner: all
+        TunerTouchTests: [test]
+    test:
+      targets:
+        - TunerTouchTests
   Tuner:
     build:
       targets:

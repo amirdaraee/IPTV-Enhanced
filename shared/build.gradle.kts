@@ -21,7 +21,7 @@ kotlin {
     jvm()
 
     val xcf = XCFramework("TunerCore")
-    listOf(tvosArm64(), tvosSimulatorArm64()).forEach { target ->
+    listOf(tvosArm64(), tvosSimulatorArm64(), iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "TunerCore"
             isStatic = true

@@ -40,7 +40,9 @@ struct SystemPlayerView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
         vc.player = player
+        #if os(tvOS)
         vc.appliesPreferredDisplayCriteriaAutomatically = true
+        #endif
         update(vc)
         return vc
     }
@@ -61,6 +63,8 @@ struct SystemPlayerView: UIViewControllerRepresentable {
             items.append(s)
         }
         vc.player?.currentItem?.externalMetadata = items
+        #if os(tvOS)
         vc.transportBarCustomMenuItems = menu.map { [$0] } ?? []
+        #endif
     }
 }

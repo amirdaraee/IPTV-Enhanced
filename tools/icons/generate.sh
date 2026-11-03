@@ -57,6 +57,10 @@ shelf() { # name width height
   "$BIN" banner $(($2 * 2)) $(($3 * 2)) "$d/shelf@2x.png"
   echo "{\"images\":[{\"filename\":\"shelf.png\",\"idiom\":\"tv\",\"scale\":\"1x\"},{\"filename\":\"shelf@2x.png\",\"idiom\":\"tv\",\"scale\":\"2x\"}],$info}" > "$d/Contents.json"
 }
+# iPhone and iPad: one 1024 px icon.
+I="$A/AppIcon.appiconset"; mkdir -p "$I"
+"$BIN" square 1024 1024 "$I/icon.png"
+echo "{\"images\":[{\"filename\":\"icon.png\",\"idiom\":\"universal\",\"platform\":\"ios\",\"size\":\"1024x1024\"}],$info}" > "$I/Contents.json"
 shelf "Top Shelf Image" 1920 720
 shelf "Top Shelf Image Wide" 2320 720
 # README / store artwork.

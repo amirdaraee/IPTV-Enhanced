@@ -14,7 +14,7 @@ struct SearchView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 40) {
+                VStack(alignment: .leading, spacing: 40.ui) {
                     if let r = results {
                         if r.isEmpty {
                             EmptyStateView(title: "No results", message: "Nothing matches \"\(query)\".")
@@ -23,16 +23,16 @@ struct SearchView: View {
                             section("Channels") {
                                 Button { addAllToFavorites(r.channels) } label: {
                                     Label("Add all to Favorites", systemImage: "star.fill")
-                                        .frame(width: 360, height: 48, alignment: .leading)
+                                        .frame(width: 360.ui, height: 48.ui, alignment: .leading)
                                 }
                                 ForEach(r.channels, id: \.id) { ch in
                                     Button { play(ch, lineup: r.channels) } label: {
-                                        HStack(spacing: 16) {
-                                            Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14)
-                                                .frame(width: 70, height: 48).clipShape(RoundedRectangle(cornerRadius: 6))
+                                        HStack(spacing: 16.ui) {
+                                            Artwork(url: ch.logo, title: ch.name, contentMode: .fit, fontSize: 14.ui)
+                                                .frame(width: 70.ui, height: 48.ui).clipShape(RoundedRectangle(cornerRadius: 6.ui))
                                             Text(ch.name).lineLimit(2)
                                         }
-                                        .frame(width: 360, alignment: .leading)
+                                        .frame(width: 360.ui, alignment: .leading)
                                     }
                                 }
                             }
@@ -41,12 +41,12 @@ struct SearchView: View {
                             section("On TV") {
                                 ForEach(Array(r.programmes.enumerated()), id: \.offset) { _, hit in
                                     Button { play(hit.channel, lineup: [hit.channel]) } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
+                                        VStack(alignment: .leading, spacing: 4.ui) {
                                             Text(hit.programme.title).lineLimit(1)
                                             Text(Fmt.range(hit.programme.start, hit.programme.stop)).font(.caption).foregroundStyle(.secondary)
                                             Text(hit.channel.name).font(.caption).foregroundStyle(.secondary)
                                         }
-                                        .frame(width: 400, alignment: .leading)
+                                        .frame(width: 400.ui, alignment: .leading)
                                     }
                                 }
                             }
@@ -81,12 +81,18 @@ struct SearchView: View {
                             .foregroundStyle(Palette.textDim)
                     }
                 }
-                .padding(60)
+                .padding(60.ui)
             }
             .navigationDestination(for: Movie.self) { MovieDetailView(movie: $0).onAppear(perform: saveQuery) }
             .navigationDestination(for: Series.self) { SeriesDetailView(series: $0).onAppear(perform: saveQuery) }
+            #if os(iOS)
+            // Always visible: there is nothing else on this screen until something is typed.
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Channels, programmes, movies, series")
+            #endif
         }
+        #if os(tvOS)
         .searchable(text: $query, prompt: "Channels, programmes, movies, series")
+        #endif
         .onAppear { recent = app.core.recentSearches() }
         .task(id: query) {
             try? await Task.sleep(nanoseconds: 300_000_000)
@@ -95,7 +101,7 @@ struct SearchView: View {
         }
         .fullScreenCover(isPresented: $fullscreen) { LivePlayerView(lineup: LiveLineup.channels) }
         .pinGate(gate)
-        .overlay(alignment: .bottom) { if let message { Toast(text: message).padding(.bottom, 40) } }
+        .overlay(alignment: .bottom) { if let message { Toast(text: message).padding(.bottom, 40.ui) } }
         .task(id: message) {
             guard message != nil else { return }
             try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -111,10 +117,10 @@ struct SearchView: View {
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 20.ui) {
             Text(title).font(.title3.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 30) { content() }.padding(.vertical, 20)
+                HStack(spacing: 30.ui) { content() }.padding(.vertical, 20.ui)
             }
         }
     }

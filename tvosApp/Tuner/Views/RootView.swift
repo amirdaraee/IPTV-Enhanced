@@ -41,7 +41,7 @@ struct RootView: View {
                 }
                 .environment(\.goLive) { tab = .live }
                 .overlay(alignment: .topTrailing) { SyncBadge() }
-                .overlay(alignment: .bottom) { if let expiry { Toast(text: expiry).padding(.bottom, 50) } }
+                .overlay(alignment: .bottom) { if let expiry { Toast(text: expiry).padding(.bottom, 50.ui) } }
                 .task {
                     // Once per launch: remind about a subscription that is about to end.
                     guard !model.checkedExpiry else { return }
@@ -68,10 +68,10 @@ private struct SyncBadge: View {
         if let s = model.runningSync {
             Text("Updating · \(s.phase)\(s.count > 0 ? " \(s.count.formatted())" : "")")
                 .font(.caption)
-                .padding(.horizontal, 18).padding(.vertical, 8)
+                .padding(.horizontal, 18.ui).padding(.vertical, 8.ui)
                 .background(Palette.surfaceHigh, in: Capsule())
                 .foregroundStyle(Palette.textDim)
-                .padding(30)
+                .padding(30.ui)
         }
     }
 }
@@ -83,17 +83,17 @@ struct WelcomeView: View {
         ZStack {
             LinearGradient(colors: [Palette.background, Palette.surface, Palette.accentDim.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 20) {
-                Text("IPTV Enhanced").font(.system(size: 96, weight: .bold)).foregroundStyle(Palette.accent)
+            VStack(alignment: .leading, spacing: 20.ui) {
+                Text("IPTV Enhanced").font(.system(size: 96.ui, weight: .bold)).foregroundStyle(Palette.accent)
                 Text("A free, open-source TV guide and player for the playlists you already have.").font(.title2.weight(.semibold))
                 Text("Works with M3U playlists, XMLTV guides and Xtream logins. Your data stays on this device.")
                     .foregroundStyle(Palette.textDim)
                 Text("IPTV Enhanced provides no channels or content. Only add playlists you are authorised to use.")
                     .foregroundStyle(Palette.textDim)
                 Button("Add your playlist") { adding = true }
-                    .padding(.top, 30)
+                    .padding(.top, 30.ui)
             }
-            .padding(120)
+            .padding(120.ui)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .fullScreenCover(isPresented: $adding) { SourceEditView(sourceId: nil) }

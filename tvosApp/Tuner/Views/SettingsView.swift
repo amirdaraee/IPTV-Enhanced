@@ -19,19 +19,20 @@ struct SettingsView: View {
 
     struct License: Identifiable { let file: String; let title: String; var id: String { file } }
 
-    struct EditTarget: Identifiable { let id: Int64? ; var key: String { "\(id ?? -1)" } }
+    /// `sourceId` is nil for a new playlist, so it can't be the identity: iOS doesn't present a cover whose item has a nil id.
+    struct EditTarget: Identifiable { let sourceId: Int64?; var id: Int64 { sourceId ?? -1 } }
     enum PinStep: Identifiable { case enter, confirm(String); var id: String { if case let .confirm(p) = self { return "c" + p }; return "e" } }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Settings").font(.largeTitle.weight(.bold)).padding(.bottom, 10)
+            VStack(alignment: .leading, spacing: 14.ui) {
+                Text("Settings").font(.largeTitle.weight(.bold)).padding(.bottom, 10.ui)
                 header("Playlists")
                 ForEach(sources, id: \.id) { s in
                     Button { sourceMenu = s } label: { SourceRow(source: s, sync: app.syncStates.first { $0.sourceId == s.id }) }
                         .buttonStyle(RowButtonStyle())
                 }
-                row("Add playlist", "M3U playlist or Xtream login") { protected { editing = EditTarget(id: nil) } }
+                row("Add playlist", "M3U playlist or Xtream login") { protected { editing = EditTarget(sourceId: nil) } }
 
                 if let st = settings {
                     header("TV guide")
@@ -64,17 +65,17 @@ struct SettingsView: View {
                 row("Open-source components", nil) { license = License(file: "third-party.txt", title: "Open-source components") }
                 row("Source code", "github.com/amirdaraee/IPTV-Enhanced") {}
             }
-            .padding(.horizontal, 120)
-            .padding(.vertical, 60)
+            .padding(.horizontal, 120.ui)
+            .padding(.vertical, 60.ui)
         }
         .onExitCommand { goLive() }
         .task { for await _ in app.changes(Changes.catalog | Changes.settings) { reload() } }
-        .fullScreenCover(item: $editing) { SourceEditView(sourceId: $0.id) }
+        .fullScreenCover(item: $editing) { SourceEditView(sourceId: $0.sourceId) }
         .fullScreenCover(item: $license) { LicenseView(file: $0.file, title: $0.title) }
         .confirmationDialog(sourceMenu?.name ?? "", isPresented: Binding(get: { sourceMenu != nil }, set: { if !$0 { sourceMenu = nil } }), presenting: sourceMenu) { s in
             Button("Refresh now") { app.core.refresh(sourceId: s.id) }
             // The PIN prompt waits for this dialog to close (see afterDialog).
-            Button("Edit") { afterDialog { protected { editing = EditTarget(id: s.id) } } }
+            Button("Edit") { afterDialog { protected { editing = EditTarget(sourceId: s.id) } } }
             Button(s.enabled ? "Disable" : "Enable") { afterDialog { protected { toggleEnabled(s) } } }
             Button("Delete", role: .destructive) { afterDialog { protected { confirmDelete = s } } }
         }
@@ -160,7 +161,7 @@ struct SettingsView: View {
     }
 
     private func header(_ title: String) -> some View {
-        Text(title).font(.title3.weight(.semibold)).padding(.top, 24)
+        Text(title).font(.title3.weight(.semibold)).padding(.top, 24.ui)
     }
 
     private func row(_ title: String, _ value: String?, action: @escaping () -> Void) -> some View {
@@ -181,8 +182,8 @@ private struct SourceRow: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 6.ui) {
+                HStack(spacing: 14.ui) {
                     Text(source.name)
                     Text(source.type == .xtream ? "Xtream" : "M3U").font(.caption).foregroundStyle(Palette.textDim)
                     if !source.enabled { Text("Disabled").font(.caption).foregroundStyle(Palette.textDim) }

@@ -5,20 +5,22 @@ import SwiftUI
 struct LicenseView: View {
     let file: String
     let title: String
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.largeTitle.weight(.bold)).padding(.bottom, 20)
+            LazyVStack(alignment: .leading, spacing: 4.ui) {
+                Text(title).font(.largeTitle.weight(.bold)).padding(.bottom, 20.ui)
                 ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
                     Button {} label: { Text(p).font(.callout) }
                         .buttonStyle(ParagraphStyle())
                 }
             }
-            .padding(.horizontal, 120)
-            .padding(.vertical, 60)
+            .padding(.horizontal, 120.ui)
+            .padding(.vertical, 60.ui)
         }
         .background(Palette.background.ignoresSafeArea())
+        .overlay(alignment: .topTrailing) { CloseButton { dismiss() } }
     }
 
     private var paragraphs: [String] {
@@ -45,10 +47,10 @@ private struct ParagraphStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16.ui)
+            .padding(.vertical, 8.ui)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(focused ? Palette.surface : .clear))
+            .background(RoundedRectangle(cornerRadius: 10.ui).fill(focused ? Palette.surface : .clear))
             .foregroundStyle(Palette.text)
     }
 }
