@@ -5,27 +5,42 @@ import SwiftUI
 final class PlayerLayerView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    /// Whether the picture fills the view (cropping) rather than fitting in it.
+    var fill = false
+    weak var engine: PlayerEngine?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        engine?.placeVLC()
+    }
 }
 
-/// Renders an AVPlayer without controls (guide preview and live fullscreen).
+/// Renders the engine's picture without controls (guide preview, live fullscreen, and movies
+/// that only VLC can play): AVPlayer's layer, or VLC's view when the engine has switched.
 struct VideoSurface: UIViewRepresentable {
-    let player: AVPlayer
+    @ObservedObject var engine: PlayerEngine
     var gravity: AVLayerVideoGravity = .resizeAspect
 
     func makeUIView(context: Context) -> PlayerLayerView {
         let v = PlayerLayerView()
         v.backgroundColor = .black
-        v.playerLayer.player = player
+        v.playerLayer.player = engine.player
         v.playerLayer.videoGravity = gravity
+        v.fill = gravity == .resizeAspectFill
+        v.engine = engine
+        engine.attach(v)
         return v
     }
 
     func updateUIView(_ uiView: PlayerLayerView, context: Context) {
         uiView.playerLayer.videoGravity = gravity
+        uiView.fill = gravity == .resizeAspectFill
+        engine.placeVLC()
     }
 
     static func dismantleUIView(_ uiView: PlayerLayerView, coordinator: ()) {
         uiView.playerLayer.player = nil
+        uiView.engine?.detach(uiView)
     }
 }
 

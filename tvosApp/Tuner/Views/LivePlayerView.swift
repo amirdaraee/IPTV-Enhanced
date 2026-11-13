@@ -51,7 +51,7 @@ struct LivePlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VideoSurface(player: engine.player, gravity: fill ? .resizeAspectFill : .resizeAspect).ignoresSafeArea()
+            VideoSurface(engine: engine, gravity: fill ? .resizeAspectFill : .resizeAspect).ignoresSafeArea()
 
             #if os(tvOS)
             // Full-screen focus target that receives remote commands while no overlay is open.
@@ -143,7 +143,7 @@ struct LivePlayerView: View {
         } message: { Text("Stops playback after the time you choose") }
         .onChange(of: engine.sleepFired) { _, _ in dismiss() }
         .task(id: showTracks) {
-            guard showTracks, let asset = engine.player.currentItem?.asset else { return }
+            guard showTracks, engine.backend == .system, let asset = engine.player.currentItem?.asset else { return }
             tracks = (try? await asset.loadMediaSelectionGroup(for: .audible), try? await asset.loadMediaSelectionGroup(for: .legible))
         }
         .pinGate(gate)
@@ -175,7 +175,11 @@ struct LivePlayerView: View {
 
     @ViewBuilder
     private var tracksMenu: some View {
-        if let item = engine.player.currentItem {
+        if engine.backend == .vlc {
+            let vlc = engine.vlcTracks
+            ForEach(vlc.audio) { t in Button("Audio: \(t.name)") { engine.selectVLCAudio(t.id) } }
+            ForEach(vlc.subtitles) { t in Button("Subtitles: \(t.name)") { engine.selectVLCSubtitles(t.id) } }
+        } else if let item = engine.player.currentItem {
             if let group = tracks.audio {
                 ForEach(Array(group.options.enumerated()), id: \.offset) { _, opt in
                     Button("Audio: \(opt.displayName)") { item.select(opt, in: group) }
@@ -468,8 +472,12 @@ struct VodPlayerView: View {
                         playNext()
                     }
             } else {
-                SystemPlayerView(player: engine.player, title: playing.title, subtitle: playing.subtitle, menu: sleepMenu)
-                    .ignoresSafeArea()
+                if engine.backend == .vlc {
+                    vlcControls
+                } else {
+                    SystemPlayerView(player: engine.player, title: playing.title, subtitle: playing.subtitle, menu: sleepMenu)
+                        .ignoresSafeArea()
+                }
                 CloseButton { dismiss() }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if UI.touch {
                     // The system player's transport bar only takes this menu on a TV.
@@ -498,7 +506,7 @@ struct VodPlayerView: View {
             saver = Task { @MainActor in
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 10_000_000_000)
-                    if engine.player.timeControlStatus == .playing { save() }
+                    if engine.isPlaying { save() }
                 }
             }
         }
@@ -508,14 +516,38 @@ struct VodPlayerView: View {
             engine.stop()
         }
         .onChange(of: engine.sleepFired) { _, _ in dismiss() }
-        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { note in
-            guard (note.object as? AVPlayerItem) === engine.player.currentItem, upNext == nil else { return }
+        .onChange(of: engine.finished) { _, _ in
+            guard upNext == nil else { return }
             let finished = playing, d = engine.durationMs
             Task {
                 try? await app.core.saveProgress(request: finished, positionMs: d, durationMs: d)
                 let next = app.core.settings.autoplayNextEpisode ? try? await app.core.nextEpisode(request: finished) : nil
                 if let next { upNext = next } else { dismiss() }
             }
+        }
+    }
+
+    /// The system player's transport bar can't drive VLC, so a stream only VLC can play gets the
+    /// picture with the basics: OK or play/pause pauses, left/right skip 10 s, Menu closes.
+    private var vlcControls: some View {
+        ZStack {
+            VideoSurface(engine: engine).ignoresSafeArea()
+            #if os(tvOS)
+            Button { engine.togglePause() } label: { Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity) }
+                .buttonStyle(InvisibleButtonStyle())
+                .onPlayPauseCommand { engine.togglePause() }
+                .onMoveCommand { direction in
+                    switch direction {
+                    case .left: engine.skip(seconds: -10)
+                    case .right: engine.skip(seconds: 10)
+                    default: break
+                    }
+                }
+                .onExitCommand { dismiss() }
+            #else
+            Color.clear.contentShape(Rectangle()).onTapGesture { engine.togglePause() }
+            #endif
+            if engine.isBuffering { ProgressView() }
         }
     }
 

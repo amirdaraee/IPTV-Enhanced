@@ -91,6 +91,12 @@ jobs:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
       - run: brew install xcodegen
+      # The VLCKit frameworks are too large for the repository; pinned by version and checksum.
+      - uses: actions/cache@v4
+        with:
+          path: tvosApp/Vendor
+          key: vlckit-${{ hashFiles('tools/vlckit/fetch.sh') }}
+      - run: tools/vlckit/fetch.sh
       - run: xcodegen generate
         working-directory: tvosApp
       # The Kotlin framework is built for arm64 only, so the simulator build is limited to arm64.

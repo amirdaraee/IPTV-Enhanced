@@ -2,13 +2,29 @@ import AVFoundation
 import Combine
 import TunerCore
 import UIKit
+#if os(tvOS)
+import TVVLCKit
+#else
+import MobileVLCKit
+#endif
 
 /// Owns the single AVPlayer shared by the guide preview and the fullscreen players,
 /// so going fullscreen never re-buffers. Adds request headers and retries live
 /// streams with exponential backoff.
+///
+/// Streams AVPlayer can't decode (MP2 audio is common on IPTV, as are MPEG-2 video and
+/// MKV files) are handed to VLCKit instead. AVPlayer stays first because it is the system
+/// player: frame-rate matching, the system transport bar and lower power use.
 @MainActor
 final class PlayerEngine: ObservableObject {
     let player = AVPlayer()
+
+    enum Backend { case system, vlc }
+    @Published private(set) var backend: Backend = .system {
+        didSet { if backend != oldValue { placeVLC() } }
+    }
+    /// Increments when a movie or episode plays to its end, whichever player was playing it.
+    @Published private(set) var finished = 0
 
     @Published private(set) var current: PlaybackRequest?
     @Published private(set) var status: String?
@@ -35,7 +51,31 @@ final class PlayerEngine: ObservableObject {
     private static let maxRetries = 3
     /// `AVError.fileFormatNotRecognized`: the file is reachable but this player can't read it (MKV, AVI).
     private static let unsupportedFormatCode = -11828
+    /// The same error as a CoreMedia code: the four characters `fmt?`, seen for MP2 audio on tvOS.
+    private static let coreMediaFormatCode = 0x666D_743F
     private static let defaultUserAgent = "Tuner/0.1 (open-source IPTV player)"
+
+    /// Created on first use: most providers never need it.
+    private var vlcPlayer: VLCMediaPlayer?
+    private lazy var vlcEvents = VLCEvents(engine: self)
+    /// VLC draws into this one view, which moves to whichever surface is on top: VLCKit 3
+    /// can't move its picture to another drawable while playing.
+    private lazy var vlcView: UIView = {
+        let v = UIView()
+        v.backgroundColor = .black
+        v.isUserInteractionEnabled = false
+        v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        return v
+    }()
+    /// Video surfaces on screen, oldest first; the newest one shows VLC's picture.
+    private var surfaces: [PlayerLayerView] = []
+    /// Streams AVPlayer couldn't decode this session, which go straight to VLC when played again.
+    private var vlcURLs = Set<String>()
+    private var vlcMonitor: Task<Void, Never>?
+    private var vlcLastProgress = Date()
+    private var vlcStarted = false
+    private var audioLanguage = ""
+    private var subtitleLanguage = ""
 
     init() {
         #if os(iOS)
@@ -55,9 +95,10 @@ final class PlayerEngine: ObservableObject {
     }
 
     func play(_ request: PlaybackRequest) {
-        if current?.url == request.url, player.currentItem != nil, player.currentItem?.status != .failed, !gaveUp {
+        if current?.url == request.url, isLoaded, !gaveUp {
             current = request
-            player.play()
+            wantsPlayback = true
+            if backend == .vlc { vlcPlayer?.play() } else { player.play() }
             return
         }
         cancelRetries()
@@ -66,8 +107,20 @@ final class PlayerEngine: ObservableObject {
         retries = 0
         status = nil
         wantsPlayback = true
-        activeURL = Self.preferredURL(request.url)
+        backend = vlcURLs.contains(request.url) ? .vlc : .system
+        activeURL = backend == .vlc ? request.url : Self.preferredURL(request.url)
         prepare(request, startMs: request.startPositionMs)
+    }
+
+    private var isLoaded: Bool {
+        switch backend {
+        case .system: return player.currentItem != nil && player.currentItem?.status != .failed
+        case .vlc: return vlcPlayer?.media != nil && vlcPlayer?.state != .error
+        }
+    }
+
+    var isPlaying: Bool {
+        backend == .vlc ? vlcPlayer?.isPlaying == true : player.timeControlStatus == .playing
     }
 
     /// AVPlayer can't play raw MPEG-TS. Xtream-style panels serve the same stream as HLS
@@ -100,6 +153,8 @@ final class PlayerEngine: ObservableObject {
     /// Preferred audio and subtitle languages (ISO 639-1; empty = stream default / no subtitles).
     /// AVPlayer applies them to every item it loads from now on.
     func setLanguages(audio: String, subtitles: String) {
+        audioLanguage = audio
+        subtitleLanguage = subtitles
         player.appliesMediaSelectionCriteriaAutomatically = true
         player.setMediaSelectionCriteria(
             audio.isEmpty ? nil : AVPlayerMediaSelectionCriteria(preferredLanguages: [audio], preferredMediaCharacteristics: nil),
@@ -110,6 +165,11 @@ final class PlayerEngine: ObservableObject {
     }
 
     func togglePause() {
+        if backend == .vlc, let vlc = vlcPlayer {
+            wantsPlayback = !vlc.isPlaying
+            if wantsPlayback { vlc.play() } else { vlc.pause() }
+            return
+        }
         if player.rate == 0 {
             wantsPlayback = true
             player.play()
@@ -117,6 +177,12 @@ final class PlayerEngine: ObservableObject {
             wantsPlayback = false
             player.pause()
         }
+    }
+
+    /// Skips within a movie or episode playing in VLC (the system player has its own scrubbing).
+    func skip(seconds: Int32) {
+        guard backend == .vlc, let vlc = vlcPlayer, current?.isLive == false else { return }
+        if seconds > 0 { vlc.jumpForward(seconds) } else { vlc.jumpBackward(-seconds) }
     }
 
     func stop() {
@@ -128,9 +194,16 @@ final class PlayerEngine: ObservableObject {
         status = nil
         player.pause()
         player.replaceCurrentItem(with: nil)
+        stopVLC()
+        backend = .system
     }
 
     private func prepare(_ request: PlaybackRequest, startMs: Int64) {
+        if backend == .vlc {
+            prepareVLC(request, startMs: startMs)
+            return
+        }
+        stopVLC()
         guard let url = Self.url(from: activeURL ?? request.url) else {
             status = "Invalid stream address"
             return
@@ -175,11 +248,11 @@ final class PlayerEngine: ObservableObject {
             let err = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? NSError
             Task { @MainActor in self?.scheduleRetry(err, fallback: "Stream interrupted") }
         })
-        if request.isLive {
-            notificationTokens.append(center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.scheduleRetry(nil, fallback: "Stream ended") }
-            })
-        }
+        notificationTokens.append(center.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                if request.isLive { self?.scheduleRetry(nil, fallback: "Stream ended") } else { self?.finished += 1 }
+            }
+        })
     }
 
     private func clearItemObservers() {
@@ -193,15 +266,15 @@ final class PlayerEngine: ObservableObject {
         guard let request = current, retryTask == nil else { return }
         stallTask?.cancel()
         NSLog("[Tuner] playback problem: %@", error?.localizedDescription ?? fallback)
+        if backend == .system, let error, Self.isUnsupportedFormat(error) {
+            switchToVLC(request)
+            return
+        }
         // A raw .ts stream that AVPlayer rejected: try the panel's HLS variant once before backing off.
-        if retries == 0, let current = activeURL, let hls = Self.hlsVariant(current), hls != current {
+        if backend == .system, retries == 0, let current = activeURL, let hls = Self.hlsVariant(current), hls != current {
             activeURL = hls
             prepare(request, startMs: 0)
             retries = 1
-            return
-        }
-        if let error, Self.isUnsupportedFormat(error) {
-            giveUp("This video format isn't supported on this device.")
             return
         }
         guard retries < Self.maxRetries else {
@@ -215,7 +288,7 @@ final class PlayerEngine: ObservableObject {
             try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled, self.current === request else { return }
             self.retryTask = nil
-            let position = request.isLive ? 0 : Int64(self.player.currentTime().seconds * 1000)
+            let position = request.isLive ? 0 : self.positionMs
             self.prepare(request, startMs: max(0, position))
         }
     }
@@ -224,6 +297,7 @@ final class PlayerEngine: ObservableObject {
     /// so only a ready item clears the message, and only sustained playback earns back the retries.
     /// Otherwise a stream that keeps failing would never run out of them.
     private func noteIfPlaying() {
+        guard backend == .system else { return }
         healthyTask?.cancel()
         guard player.timeControlStatus == .playing, player.currentItem?.status == .readyToPlay else { return }
         status = nil
@@ -243,6 +317,8 @@ final class PlayerEngine: ObservableObject {
         status = message
         isBuffering = false
         player.pause()
+        vlcMonitor?.cancel()
+        vlcPlayer?.stop()
     }
 
     private func cancelRetries() {
@@ -255,6 +331,7 @@ final class PlayerEngine: ObservableObject {
     private static func isUnsupportedFormat(_ error: Error) -> Bool {
         let e = error as NSError
         if e.domain == AVFoundationErrorDomain, e.code == unsupportedFormatCode { return true }
+        if e.domain == "CoreMediaErrorDomain", e.code == coreMediaFormatCode { return true }
         return (e.userInfo[NSUnderlyingErrorKey] as? Error).map(isUnsupportedFormat) ?? false
     }
 
@@ -282,6 +359,9 @@ final class PlayerEngine: ObservableObject {
     #if DEBUG
     /// One-line player diagnostics for the `-playerHUD` launch argument.
     var debugSummary: String {
+        if backend == .vlc, let vlc = vlcPlayer {
+            return "vlc state=\(VLCMediaPlayerStateToString(vlc.state)) playing=\(vlc.isPlaying) t=\(vlc.time.intValue) audio=\(vlc.numberOfAudioTracks) video=\(Int(vlc.videoSize.width))x\(Int(vlc.videoSize.height))"
+        }
         let item = player.currentItem
         let loaded = item?.loadedTimeRanges.map { String(format: "%.1f+%.1f", $0.timeRangeValue.start.seconds, $0.timeRangeValue.duration.seconds) }.joined(separator: ",") ?? "-"
         let wait = player.reasonForWaitingToPlay?.rawValue.replacingOccurrences(of: "AVPlayerWaiting", with: "") ?? "-"
@@ -292,11 +372,13 @@ final class PlayerEngine: ObservableObject {
     #endif
 
     var positionMs: Int64 {
+        if backend == .vlc { return Int64(vlcPlayer?.time.intValue ?? 0) }
         let t = player.currentTime().seconds
         return t.isFinite ? Int64(t * 1000) : 0
     }
 
     var durationMs: Int64 {
+        if backend == .vlc { return Int64(vlcPlayer?.media?.length.intValue ?? 0) }
         guard let d = player.currentItem?.duration.seconds, d.isFinite else { return 0 }
         return Int64(d * 1000)
     }
@@ -304,5 +386,184 @@ final class PlayerEngine: ObservableObject {
     private static func url(from string: String) -> URL? {
         if let u = URL(string: string) { return u }
         return string.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed).flatMap(URL.init(string:))
+    }
+}
+
+// MARK: - VLC fallback
+
+extension PlayerEngine {
+    /// The current stream couldn't be decoded by AVPlayer: play it in VLC from now on.
+    private func switchToVLC(_ request: PlaybackRequest) {
+        NSLog("[Tuner] AVPlayer can't decode this stream; using VLC")
+        vlcURLs.insert(request.url)
+        clearItemObservers()
+        player.replaceCurrentItem(with: nil)
+        backend = .vlc
+        activeURL = request.url
+        retries = 0
+        status = nil
+        prepare(request, startMs: request.isLive ? 0 : request.startPositionMs)
+    }
+
+    private func prepareVLC(_ request: PlaybackRequest, startMs: Int64) {
+        clearItemObservers()
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        guard let url = Self.url(from: activeURL ?? request.url) else {
+            status = "Invalid stream address"
+            return
+        }
+        let vlc = vlcPlayer ?? makeVLC()
+        let media = VLCMedia(url: url)
+        media.addOption(":http-user-agent=\(request.userAgent ?? Self.defaultUserAgent)")
+        if let ref = request.referrer { media.addOption(":http-referrer=\(ref)") }
+        media.addOption(":network-caching=\(request.isLive ? 2000 : 1500)")
+        if startMs > 0 { media.addOption(":start-time=\(Double(startMs) / 1000)") }
+        if !audioLanguage.isEmpty { media.addOption(":audio-language=\(audioLanguage)") }
+        if !subtitleLanguage.isEmpty { media.addOption(":sub-language=\(subtitleLanguage)") }
+        vlc.media = media
+        vlcStarted = false
+        vlcLastProgress = Date()
+        isBuffering = true
+        vlc.play()
+        monitorVLC()
+    }
+
+    private func makeVLC() -> VLCMediaPlayer {
+        let vlc = VLCMediaPlayer()
+        vlc.drawable = vlcView
+        vlc.delegate = vlcEvents
+        vlcPlayer = vlc
+        return vlc
+    }
+
+    private func stopVLC() {
+        vlcMonitor?.cancel()
+        vlcMonitor = nil
+        guard let vlc = vlcPlayer, vlc.media != nil else { return }
+        vlc.stop()
+        vlc.media = nil
+    }
+
+    /// VLC reports buffering states too often to trust, so progress of the clock decides:
+    /// no progress for a moment shows the spinner, and for 10 s on a live stream counts as a stall.
+    private func monitorVLC() {
+        vlcMonitor?.cancel()
+        vlcMonitor = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self, !Task.isCancelled, self.backend == .vlc, !self.gaveUp else { return }
+                let idle = Date().timeIntervalSince(self.vlcLastProgress)
+                let waiting = self.wantsPlayback && idle > 1.5
+                if self.isBuffering != waiting { self.isBuffering = waiting }
+                if waiting, idle > 10, self.current?.isLive == true || !self.vlcStarted {
+                    self.scheduleRetry(nil, fallback: "Stream stalled")
+                    return
+                }
+            }
+        }
+    }
+
+    fileprivate func vlcStateChanged() {
+        guard backend == .vlc, let vlc = vlcPlayer, let request = current else { return }
+        switch vlc.state {
+        case .error:
+            scheduleRetry(nil, fallback: "Playback failed")
+        case .ended:
+            if request.isLive { scheduleRetry(nil, fallback: "Stream ended") } else { finished += 1 }
+        default:
+            break
+        }
+    }
+
+    fileprivate func vlcTimeChanged() {
+        guard backend == .vlc else { return }
+        vlcLastProgress = Date()
+        if isBuffering { isBuffering = false }
+        guard !vlcStarted else { return }
+        vlcStarted = true
+        status = nil
+        // As with AVPlayer, only sustained playback earns back the retries.
+        healthyTask?.cancel()
+        healthyTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard !Task.isCancelled else { return }
+            self.retries = 0
+        }
+    }
+
+    // MARK: Surfaces
+
+    func attach(_ surface: PlayerLayerView) {
+        surfaces.removeAll { $0 === surface }
+        surfaces.append(surface)
+        placeVLC()
+    }
+
+    func detach(_ surface: PlayerLayerView) {
+        surfaces.removeAll { $0 === surface }
+        placeVLC()
+    }
+
+    /// Puts VLC's picture in the newest surface, or takes it down when AVPlayer is playing.
+    func placeVLC() {
+        guard backend == .vlc, let host = surfaces.last else {
+            if vlcPlayer != nil { vlcView.removeFromSuperview() }
+            return
+        }
+        if vlcView.superview !== host {
+            vlcView.frame = host.bounds
+            host.addSubview(vlcView)
+        }
+        applyFill(host.fill, size: host.bounds.size)
+    }
+
+    /// "Fill" crops the picture to the surface's shape, like `resizeAspectFill`.
+    private func applyFill(_ fill: Bool, size: CGSize) {
+        guard let vlc = vlcPlayer else { return }
+        guard fill, size.width > 0, size.height > 0 else {
+            vlc.videoCropGeometry = nil
+            return
+        }
+        let geometry = strdup("\(Int(size.width.rounded())):\(Int(size.height.rounded()))")
+        vlc.videoCropGeometry = geometry
+        free(geometry)
+    }
+
+    // MARK: Tracks
+
+    struct VLCTrack: Identifiable {
+        let id: Int32
+        let name: String
+    }
+
+    /// Audio and subtitle tracks of a stream playing in VLC ("Disable" included for subtitles).
+    var vlcTracks: (audio: [VLCTrack], subtitles: [VLCTrack]) {
+        guard backend == .vlc, let vlc = vlcPlayer else { return ([], []) }
+        func tracks(_ names: [Any]?, _ ids: [Any]?) -> [VLCTrack] {
+            zip(ids ?? [], names ?? []).compactMap { id, name in
+                guard let id = (id as? NSNumber)?.int32Value, let name = name as? String else { return nil }
+                return VLCTrack(id: id, name: name)
+            }
+        }
+        return (tracks(vlc.audioTrackNames, vlc.audioTrackIndexes), tracks(vlc.videoSubTitlesNames, vlc.videoSubTitlesIndexes))
+    }
+
+    func selectVLCAudio(_ id: Int32) { vlcPlayer?.currentAudioTrackIndex = id }
+    func selectVLCSubtitles(_ id: Int32) { vlcPlayer?.currentVideoSubTitleIndex = id }
+}
+
+/// Forwards VLC's delegate callbacks, which arrive on the main thread, to the engine.
+private final class VLCEvents: NSObject, VLCMediaPlayerDelegate {
+    weak var engine: PlayerEngine?
+
+    init(engine: PlayerEngine) { self.engine = engine }
+
+    func mediaPlayerStateChanged(_ aNotification: Notification) {
+        MainActor.assumeIsolated { engine?.vlcStateChanged() }
+    }
+
+    func mediaPlayerTimeChanged(_ aNotification: Notification) {
+        MainActor.assumeIsolated { engine?.vlcTimeChanged() }
     }
 }

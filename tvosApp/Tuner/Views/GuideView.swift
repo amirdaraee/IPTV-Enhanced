@@ -755,7 +755,7 @@ private struct GuideHeader: View {
             ZStack {
                 Color.black
                 if engine.current?.isLive == true {
-                    VideoSurface(player: engine.player)
+                    VideoSurface(engine: engine)
                     if let s = engine.status { Text(s).font(.caption).padding(8.ui).frame(maxHeight: .infinity, alignment: .bottom) }
                 } else {
                     Text(UI.touch ? "Tap a programme to preview" : "Select a programme to preview").font(.callout).foregroundStyle(Palette.textDim)

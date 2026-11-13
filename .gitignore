@@ -12,3 +12,6 @@ tvosApp/*.xcodeproj/
 *.xcresult/
 DerivedData/
 *.xcuserstate
+
+# VLCKit binaries, fetched by tools/vlckit/fetch.sh.
+tvosApp/Vendor/

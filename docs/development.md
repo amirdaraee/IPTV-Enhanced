@@ -35,6 +35,7 @@ Requirements:
 adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 
 # tvOS (the Xcode build phase compiles the Kotlin framework via Gradle)
+tools/vlckit/fetch.sh   # once: the VLCKit fallback player, into tvosApp/Vendor (git-ignored)
 cd tvosApp && xcodegen generate
 xcodebuild -project Tuner.xcodeproj -scheme Tuner -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation) (at 1080p)' build
 ```
