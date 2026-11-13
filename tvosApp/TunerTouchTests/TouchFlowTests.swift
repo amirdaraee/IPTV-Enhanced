@@ -173,6 +173,53 @@ final class TouchFlowTests: XCTestCase {
 
     private func typePin() { for d in ["1", "2", "3", "4"] { app.buttons[d].firstMatch.tap() } }
 
+    func test5ForgottenPinAndCloudSwitch() {
+        tab("Settings")
+        sleep(2)
+        row("Set a PIN").tap()
+        XCTAssertTrue(app.buttons["1"].firstMatch.waitForExistence(timeout: 5), "new PIN pad")
+        typePin()
+        sleep(1)
+        XCTAssertTrue(app.buttons["1"].firstMatch.waitForExistence(timeout: 5), "confirm PIN pad")
+        typePin()
+        sleep(2)
+
+        row("Hidden groups").tap()
+        let forgot = app.buttons["Forgot PIN?"].firstMatch
+        XCTAssertTrue(forgot.waitForExistence(timeout: 5), "the PIN pad offers a reset")
+        shot("20-pin-forgot")
+        forgot.tap()
+        let field = app.secureTextFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "reset form")
+        field.tap()
+        field.typeText("wrong")
+        let remove = app.buttons["Remove PIN"].firstMatch
+        remove.tap()
+        XCTAssertTrue(app.staticTexts["That doesn't match any of your playlists"].waitForExistence(timeout: 3), "a wrong guess is refused")
+        shot("21-pin-reset-wrong")
+        field.tap()
+        field.typeText("secret")
+        remove.tap()
+        sleep(2)
+        XCTAssertFalse(field.exists, "the right password closes the form")
+        XCTAssertFalse(app.buttons["1"].exists, "without asking for the PIN again")
+
+        let close = app.buttons["Cancel"].firstMatch
+        if close.exists { close.tap(); sleep(1) }
+        let sync = row("Sync across your devices")
+        XCTAssertTrue(sync.label.contains("On"), sync.label)
+        sync.tap()
+        let off = app.buttons["Turn off, keep the iCloud copy"].firstMatch
+        XCTAssertTrue(off.waitForExistence(timeout: 5), "the switch explains itself")
+        shot("22-cloud-off-dialog")
+        off.tap()
+        sleep(2)
+        XCTAssertTrue(row("Sync across your devices").label.contains("Off"), "turned off")
+        row("Sync across your devices").tap()
+        sleep(2)
+        XCTAssertTrue(row("Sync across your devices").label.contains("On"), "and back on")
+    }
+
     func test4SettingsAndPin() {
         tab("Settings")
         sleep(2)

@@ -14,6 +14,9 @@ struct SettingsView: View {
     @State private var hiddenChannels: [Channel]?
     /// Mirrors `core.hasPin()`, which SwiftUI can't observe.
     @State private var hasPin = false
+    @State private var cloudOn = true
+    @State private var confirmCloudOff = false
+    @State private var cloudTooLarge = false
     @Environment(\.goLive) private var goLive
     @State private var license: License?
 
@@ -58,6 +61,10 @@ struct SettingsView: View {
                 }
                 row("Hidden groups", nil) { protected { Task { hiddenGroups = (try? await app.core.liveGroups(includeHidden: true))?.filter(\.hidden) ?? [] } } }
                 row("Hidden channels", nil) { protected { Task { hiddenChannels = (try? await app.core.hiddenChannels()) ?? [] } } }
+                header("iCloud")
+                row("Sync across your devices", cloudStatus) {
+                    protected { if cloudOn { confirmCloudOff = true } else { app.core.setCloudSyncEnabled(enabled: true, deleteCloudCopy: false) } }
+                }
                 header("About")
                 row("IPTV Enhanced \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")", "Copyright © 2026 the IPTV Enhanced authors") {}
                 row("No content included", "Only add playlists you are authorised to use") {}
@@ -69,6 +76,7 @@ struct SettingsView: View {
             .padding(.vertical, 60.ui)
         }
         .onExitCommand { goLive() }
+        .onReceive(app.cloud.$tooLarge) { cloudTooLarge = $0 }
         .task { for await _ in app.changes(Changes.catalog | Changes.settings) { reload() } }
         .fullScreenCover(item: $editing) { SourceEditView(sourceId: $0.sourceId) }
         .fullScreenCover(item: $license) { LicenseView(file: $0.file, title: $0.title) }
@@ -108,6 +116,13 @@ struct SettingsView: View {
                 }
             }
         }
+        .confirmationDialog("Turn off iCloud sync on this device?", isPresented: $confirmCloudOff, titleVisibility: .visible) {
+            Button("Turn off, keep the iCloud copy") { app.core.setCloudSyncEnabled(enabled: false, deleteCloudCopy: false) }
+            Button("Turn off and delete the iCloud copy", role: .destructive) { app.core.setCloudSyncEnabled(enabled: false, deleteCloudCopy: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The iCloud copy includes your logins. Another device with sync on will upload it again, so turn sync off there first.")
+        }
         .confirmationDialog("Hidden groups", isPresented: Binding(get: { hiddenGroups != nil }, set: { if !$0 { hiddenGroups = nil } })) {
             ForEach(hiddenGroups ?? [], id: \.id) { g in
                 Button("Show \(g.name)") { Task { try? await app.core.setGroupHidden(group: g, hidden: false) } }
@@ -126,6 +141,7 @@ struct SettingsView: View {
     private func reload() {
         settings = app.core.settings
         hasPin = app.core.hasPin()
+        cloudOn = app.core.cloudSyncEnabled
         Task { sources = (try? await app.core.sources()) ?? [] }
     }
 
@@ -151,6 +167,11 @@ struct SettingsView: View {
 
     /// Settings that weaken parental control require the PIN first: the PIN itself, hidden items,
     /// and changing playlists (deleting or replacing one would get around its locks).
+    private var cloudStatus: String {
+        guard cloudOn else { return "Off" }
+        return cloudTooLarge ? "On, but too much data to sync" : "On, using your iCloud account"
+    }
+
     private func protected(_ action: @escaping () -> Void) {
         gate.run(app.core, locked: true, title: "Settings", action: action)
     }

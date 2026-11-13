@@ -130,6 +130,8 @@ class TunerCore internal constructor(
     private val counters = MutableStateFlow(LongArray(KINDS))
     private val syncStates = MutableStateFlow<Map<Long, SyncState>>(emptyMap())
     private var sessionUnlocked = false
+    private var cloud: UserDataCloud? = null
+    private val cloudLock = Mutex()
 
     var settings: Settings = loadSettings()
         private set
@@ -201,6 +203,86 @@ class TunerCore internal constructor(
     /** The user's own data (playlists, favorites, progress, settings) as JSON, for backup or transfer. */
     @Throws(Exception::class)
     suspend fun exportUserData(): String = io { UserData.export(db) }
+
+    // ------------------------------------------------------------------ cloud sync
+
+    /** Keeps [cloud] and this device in step from now on: at once, and after local changes settle. */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    fun startCloudSync(cloud: UserDataCloud) {
+        this.cloud = cloud
+        scope.launch { counters.debounce(3000).collect { runCatching { syncCloudNow() } } }
+    }
+
+    /** Call when the cloud copy changed on another device, or when returning to the foreground. */
+    fun syncCloud() {
+        scope.launch { runCatching { syncCloudNow() } }
+    }
+
+    /** The cloud now belongs to another account: what was agreed with the old one says nothing about it. */
+    fun cloudAccountChanged() {
+        scope.launch {
+            cloudLock.withLock { io { db.userQueries.removeSetting(CLOUD_BASE) } }
+            runCatching { syncCloudNow() }
+        }
+    }
+
+    /** Whether this device syncs. Kept with the local backup, so it survives a purge or a reinstall. */
+    val cloudSyncEnabled: Boolean
+        get() = db.userQueries.getSetting(CLOUD_OFF).executeAsOneOrNull() == null
+
+    /**
+     * Turns sync on or off for this device. [deleteCloudCopy] also removes the copy in the cloud;
+     * another device with sync on would upload it again.
+     */
+    fun setCloudSyncEnabled(enabled: Boolean, deleteCloudCopy: Boolean) {
+        scope.launch { runCatching { setCloudSyncEnabledNow(enabled, deleteCloudCopy) } }
+    }
+
+    internal suspend fun setCloudSyncEnabledNow(enabled: Boolean, deleteCloudCopy: Boolean) {
+        cloudLock.withLock {
+            io {
+                // Turning it back on later must combine with the cloud, not treat its changes as deletions.
+                db.userQueries.removeSetting(CLOUD_BASE)
+                if (enabled) db.userQueries.removeSetting(CLOUD_OFF) else db.userQueries.putSetting(CLOUD_OFF, "1")
+                if (deleteCloudCopy) cloud?.delete()
+            }
+        }
+        changed(Changes.SETTINGS)
+        if (enabled) syncCloudNow()
+    }
+
+    internal fun attachCloudForTest(cloud: UserDataCloud) { this.cloud = cloud }
+    internal fun portableForTest() = UserData.portable(UserData.snapshot(db))
+
+    internal suspend fun syncCloudNow() {
+        val applied = cloudLock.withLock {
+            io {
+                val cloud = cloud ?: return@io null
+                if (!cloudSyncEnabled) return@io null
+                val remoteCopy = cloud.read()?.let(UserData::parse)
+                if (remoteCopy != null && UserData.isFromNewerVersion(remoteCopy)) return@io null
+                val base = db.userQueries.getSetting(CLOUD_BASE).executeAsOneOrNull()?.let(UserData::parse)
+                val raw = UserData.snapshot(db)
+                val local = UserData.portable(raw)
+                // No cloud copy yet (or a new account) can't mean "everything was deleted".
+                val merged = if (remoteCopy == null) local else UserData.merge(base, local, remoteCopy)
+                val result = if (merged != local) UserData.apply(db, raw, merged) else null
+                val now = UserData.portable(UserData.snapshot(db))
+                // An empty device that never synced must not overwrite the cloud copy. Emptying
+                // one that has (base != null) is a real deletion and does reach the other devices.
+                if (now.sources.isEmpty() && base == null) return@io result
+                val text = UserData.encode(now)
+                // The base must be what the cloud really holds, or a refused write would later
+                // make this device's newer data look like the old side of the merge.
+                if (now == remoteCopy || cloud.write(text)) db.userQueries.putSetting(CLOUD_BASE, text)
+                result
+            }
+        } ?: return
+        if (applied.changes and Changes.SETTINGS != 0) settings = loadSettings()
+        if (applied.removedSources.isNotEmpty()) syncStates.update { it - applied.removedSources.toSet() }
+        if (applied.changes != 0) changed(applied.changes)
+        applied.addedSources.forEach { refresh(it) }
+    }
 
     // ------------------------------------------------------------------ settings
 
@@ -301,13 +383,7 @@ class TunerCore internal constructor(
     @Throws(Exception::class)
     suspend fun deleteSource(id: Long) {
         io {
-            db.transaction {
-                db.catalogQueries.deleteSourcePrefs(id)
-                db.epgQueries.deleteProgrammes(id)
-                db.epgQueries.deleteEpgChannels(id)
-                db.userQueries.deleteSourceUserData(id)
-                db.sourceQueries.delete(id)
-            }
+            db.transaction { UserData.deleteSourceRows(db, id) }
         }
         syncStates.update { it - id }
         changed(Changes.ALL)
@@ -940,13 +1016,34 @@ class TunerCore internal constructor(
             q.removeSetting(PIN_FAILURES)
             q.removeSetting(PIN_LOCKED_UNTIL)
         } else {
-            val failures = (q.getSetting(PIN_FAILURES).executeAsOneOrNull()?.toIntOrNull() ?: 0) + 1
-            q.putSetting(PIN_FAILURES, failures.toString())
-            if (failures >= MAX_PIN_ATTEMPTS) {
-                val delay = (30_000L shl (failures - MAX_PIN_ATTEMPTS).coerceAtMost(5)).coerceAtMost(15 * 60_000L)
-                q.putSetting(PIN_LOCKED_UNTIL, (nowMillis() + delay).toString())
-            }
+            recordPinFailure()
         }
+        return ok
+    }
+
+    private fun recordPinFailure() {
+        val q = db.userQueries
+        val failures = (q.getSetting(PIN_FAILURES).executeAsOneOrNull()?.toIntOrNull() ?: 0) + 1
+        q.putSetting(PIN_FAILURES, failures.toString())
+        if (failures >= MAX_PIN_ATTEMPTS) {
+            val delay = (30_000L shl (failures - MAX_PIN_ATTEMPTS).coerceAtMost(5)).coerceAtMost(15 * 60_000L)
+            q.putSetting(PIN_LOCKED_UNTIL, (nowMillis() + delay).toString())
+        }
+    }
+
+    /**
+     * Removes a forgotten PIN, given proof that the person set up the app: the password of an
+     * Xtream login or the full address of an M3U playlist. Both are only shown behind the PIN, and
+     * wrong guesses count towards the same lockout as wrong PINs.
+     */
+    fun resetPin(proof: String): Boolean {
+        if (pinLockoutRemainingMs() > 0) return false
+        val sources = db.sourceQueries.selectAll().executeAsList()
+        val ok = sources.isEmpty() || sources.any { s ->
+            if (s.type == SourceType.XTREAM.name) !s.password.isNullOrEmpty() && s.password == proof
+            else s.url.trim() == proof.trim()
+        }
+        if (ok) clearPin() else recordPinFailure()
         return ok
     }
 
@@ -985,6 +1082,8 @@ class TunerCore internal constructor(
         private const val PIN_SALT = "pin_salt"
         internal const val PIN_FAILURES = "pin_failures"
         internal const val PIN_LOCKED_UNTIL = "pin_locked_until"
+        internal const val CLOUD_BASE = "cloud_base"
+        internal const val CLOUD_OFF = "cloud_off"
         private const val MAX_PIN_ATTEMPTS = 5
         private const val RECENT_SEARCHES = "recent_searches"
         private const val MAX_RECENT_SEARCHES = 8

@@ -7,6 +7,7 @@ struct PinPad: View {
     let message: String
     let onSubmit: (String) -> Bool
     let onCancel: () -> Void
+    var onForgot: (() -> Void)? = nil
 
     @EnvironmentObject private var model: AppModel
     @State private var pin = ""
@@ -35,6 +36,9 @@ struct PinPad: View {
                         }
                     }
                 }
+            }
+            if let onForgot {
+                Button("Forgot PIN?", action: onForgot)
             }
         }
         .padding(60.ui)
@@ -74,6 +78,58 @@ struct PinPad: View {
     }
 }
 
+/// A forgotten PIN: proving you set up the app removes it (see `Tuner.resetPin`).
+struct PinResetView: View {
+    let onDone: () -> Void
+    let onCancel: () -> Void
+
+    @EnvironmentObject private var model: AppModel
+    @State private var proof = ""
+    @State private var wrong = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 24.ui) {
+            Text("Forgot PIN").font(.title2.weight(.semibold))
+            Text("Enter an Xtream password or M3U address from one of your playlists. This removes the PIN on all your devices.")
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Palette.textDim)
+            if wrong {
+                Text(lockoutMessage).foregroundStyle(Palette.live)
+            }
+            SecureField("Password or address", text: $proof)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($focused)
+                .frame(maxWidth: 800.ui)
+            HStack(spacing: 24.ui) {
+                Button("Remove PIN", action: submit).disabled(proof.isEmpty)
+                Button("Cancel", action: onCancel)
+            }
+        }
+        .padding(60.ui)
+        .frame(maxWidth: 1000.ui)
+        .background(Palette.surfaceHigh, in: RoundedRectangle(cornerRadius: 28.ui))
+        .onAppear { focused = true }
+        .onExitCommand(perform: onCancel)
+    }
+
+    private var lockoutMessage: String {
+        let secs = (model.core.pinLockoutRemainingMs() + 999) / 1000
+        return secs > 0 ? "Too many wrong attempts. Try again in \(secs) s" : "That doesn't match any of your playlists"
+    }
+
+    private func submit() {
+        if model.core.resetPin(proof: proof) {
+            onDone()
+        } else {
+            wrong = true
+            proof = ""
+        }
+    }
+}
+
 /// Runs `action` immediately if allowed, otherwise asks for the PIN first.
 @MainActor
 final class PinGate: ObservableObject {
@@ -87,12 +143,20 @@ final class PinGate: ObservableObject {
 struct PinGateOverlay: ViewModifier {
     @ObservedObject var gate: PinGate
     @EnvironmentObject private var model: AppModel
+    @State private var forgot = false
 
     func body(content: Content) -> some View {
         content.fullScreenCover(isPresented: Binding(get: { gate.pending != nil }, set: { if !$0 { gate.pending = nil } })) {
             ZStack {
                 Color.black.opacity(0.6).ignoresSafeArea()
-                if let p = gate.pending {
+                if let p = gate.pending, forgot {
+                    PinResetView(onDone: {
+                        forgot = false
+                        let action = p.action
+                        gate.pending = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: action)
+                    }, onCancel: { forgot = false })
+                } else if let p = gate.pending {
                     PinPad(title: "Parental PIN", message: "Enter the PIN to open \"\(p.title)\"", onSubmit: { pin in
                         guard model.core.unlock(pin: pin) else { return false }
                         let action = p.action
@@ -100,7 +164,7 @@ struct PinGateOverlay: ViewModifier {
                         // After this cover has closed, so an action that presents something still can.
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: action)
                         return true
-                    }, onCancel: { gate.pending = nil })
+                    }, onCancel: { gate.pending = nil }, onForgot: { forgot = true })
                 }
             }
         }

@@ -30,7 +30,7 @@ targets:
       properties:
         CFBundleDisplayName: IPTV Enhanced
         CFBundleShortVersionString: "0.2.1"
-        CFBundleVersion: "4"
+        CFBundleVersion: "5"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         # Landscape like a TV. Full screen because the guide doesn't fit iPad split view.
@@ -42,6 +42,11 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+    # The team comes from the build command, so none is stored here.
+    entitlements:
+      path: Tuner/Tuner.entitlements
+      properties:
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(CFBundleIdentifier)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.amirdaraee.iptv

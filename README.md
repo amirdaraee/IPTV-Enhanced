@@ -83,7 +83,8 @@ It has Big Buck Bunny (2008) and Tears of Steel (2012), © Blender Foundation, C
 
 **Your data**
 - Playlists, favorites, hidden/locked/reordered groups, watch progress, recents and settings are kept in a small backup copy that the core rewrites whenever they change. If the app starts with an empty database, it restores from that copy and re-syncs the channels.
-- **Apple TV:** the database has to live in Caches (a real Apple TV doesn't let apps write elsewhere), which tvOS may purge; the backup copy lives in the Keychain, which is never purged and survives reinstalls. iCloud sync is planned once the project has a paid Apple developer account.
+- **Apple TV:** the database has to live in Caches (a real Apple TV doesn't let apps write elsewhere), which tvOS may purge; the backup copy lives in the Keychain, which is never purged and survives reinstalls.
+- **iCloud (Apple TV, iPhone, iPad):** playlists with their logins, favorites, watch progress and settings follow you between devices on the same iCloud account.
 - **Android TV:** the database lives in app storage, which the system doesn't purge. The copy (`files/user-data.json`) is the only thing Android's backup to Google may include, and only when that backup is end-to-end encrypted. Fire TV has no Google backup.
 
 ## Platforms

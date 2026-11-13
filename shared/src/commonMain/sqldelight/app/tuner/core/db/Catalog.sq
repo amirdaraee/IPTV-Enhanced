@@ -407,6 +407,12 @@ SELECT * FROM item_pref WHERE favorite = 1 OR hidden = 1 OR locked = 1;
 restoreItemPref:
 INSERT OR REPLACE INTO item_pref(source_id, kind, ckey, favorite, favorite_at, hidden, locked) VALUES (?, ?, ?, ?, ?, ?, ?);
 
+deleteItemPref:
+DELETE FROM item_pref WHERE source_id = ? AND kind = ? AND ckey = ?;
+
+deleteGroupPref:
+DELETE FROM group_pref WHERE source_id = ? AND kind = ? AND ckey = ?;
+
 allGroupPrefs:
 SELECT * FROM group_pref WHERE hidden = 1 OR locked = 1 OR custom_position IS NOT NULL;
 

@@ -60,3 +60,6 @@ DELETE FROM source WHERE id = ?;
 restore:
 INSERT INTO source(name, type, url, username, password, epg_urls, user_agent, epg_offset_minutes, refresh_hours, enabled, position)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+setPosition:
+UPDATE source SET position = ? WHERE id = ?;

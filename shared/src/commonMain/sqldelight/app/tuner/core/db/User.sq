@@ -86,3 +86,6 @@ SELECT * FROM recent;
 
 allSettings:
 SELECT * FROM setting;
+
+deleteRecent:
+DELETE FROM recent WHERE source_id = ? AND ckey = ?;

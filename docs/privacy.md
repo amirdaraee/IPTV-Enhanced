@@ -13,7 +13,7 @@ The app stores what you enter and what you do in it on your device only:
 - favourites, hidden and locked items, watch history and playback positions;
 - your settings, and your parental PIN, which is stored only as a salted hash.
 
-Deleting a playlist removes its data. Uninstalling the app removes everything, except the Apple TV Keychain copy described below.
+Deleting a playlist removes its data. Uninstalling the app removes everything on that device, except the Keychain and iCloud copies described below.
 
 ## Where the app connects
 
@@ -22,7 +22,8 @@ The app only connects to the addresses in your playlists: your provider's server
 ## Backups
 
 - **Android:** your playlists and preferences are included in Android's own device backup only when that backup is end-to-end encrypted (your device has a screen lock). Android handles the backup; the developers can't read it.
-- **Apple TV:** a copy of your playlists and preferences is kept in the Apple TV's Keychain on the device, so it can be restored if the system clears the app's storage. It is not synced to iCloud. The Keychain can keep it after the app is uninstalled; deleting your playlists in the app before uninstalling removes them from it.
+- **Apple TV, iPhone and iPad, on the device:** a copy of your playlists and preferences is kept in the device's Keychain, so it can be restored if the system clears the app's storage. The Keychain can keep it after the app is uninstalled; deleting your playlists in the app before uninstalling removes them from it.
+- **Apple TV, iPhone and iPad, in iCloud:** if you are signed in to iCloud, your playlists, **including the usernames and passwords of your Xtream logins**, your favorites, hidden and locked items, parental PIN (stored as a salted hash), watch progress, recently watched channels and settings are stored in your iCloud account and shared with your other devices on that account. Apple stores this data under its iCloud terms; the developers have no access to it and don't run the service. Deleting a playlist in the app removes it from iCloud and your other devices. To stop, go to Settings → iCloud on each device, where you can also delete the copy in iCloud. Signing out of iCloud also stops a device syncing.
 
 ## Children
 

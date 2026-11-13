@@ -208,6 +208,47 @@ final class TunerUITests: XCTestCase {
         shot("settings-parental")
     }
 
+    private func focus(_ label: String, _ direction: XCUIRemote.Button = .down) {
+        let target = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+        for _ in 0..<40 where !target.hasFocus { press(direction, wait: 0.5) }
+        XCTAssertTrue(target.hasFocus, "focus on \(label)")
+    }
+
+    func testForgottenPinAndCloudSwitch() {
+        app.launchArguments = ["-resetData", "-demoXtream", "http://localhost:8900"]
+        app.launch()
+        Thread.sleep(forTimeInterval: 6)
+        press(.menu, wait: 1)  // group list → tab bar
+        press(.right, 4, wait: 1.5)
+        press(.down, wait: 1.5)
+        focus("Set a PIN")
+        press(.select, wait: 2)
+        press(.select, 4, wait: 0.5)  // 1111
+        Thread.sleep(forTimeInterval: 1.5)
+        press(.select, 4, wait: 0.5)
+        Thread.sleep(forTimeInterval: 2)
+        focus("Hidden groups")
+        press(.select, wait: 2)
+        focus("Forgot PIN?")
+        shot("pin-forgot")
+        press(.select, wait: 2)
+        shot("pin-reset-form")
+        press(.select, wait: 2)
+        type("secret")
+        press(.menu, wait: 1.5)
+        focus("Remove PIN")
+        shot("pin-reset-filled")
+        press(.select, wait: 3)
+        shot("pin-removed")
+        XCTAssertFalse(app.buttons["Forgot PIN?"].exists, "the reset closed the PIN prompt")
+        press(.menu, wait: 1.5)  // the hidden groups list it was guarding
+        focus("Sync across your devices")
+        shot("cloud-row")
+        press(.select, wait: 2)
+        shot("cloud-off-dialog")
+        XCTAssertTrue(app.buttons["Turn off, keep the iCloud copy"].exists)
+    }
+
     /// Sets up a real account and adds the channels matching TEST_RUNNER_LIVE_SEARCH (default "news") to Favorites.
     /// Skipped unless LIVE_XTREAM="server|user|pass" is passed (TEST_RUNNER_LIVE_XTREAM via xcodebuild),
     /// so credentials never live in the repo.

@@ -6,6 +6,7 @@ import TunerCore
 final class AppModel: ObservableObject {
     let core: Tuner
     let player = PlayerEngine()
+    let cloud = CloudStore()
 
     @Published var hasSources: Bool?
     @Published var syncStates: [SyncState] = []
@@ -19,9 +20,14 @@ final class AppModel: ObservableObject {
         core = Tuner(context: PlatformContext(backup: KeychainBackup()))
         // AVPlayer can't play raw MPEG-TS, so Xtream live channels use HLS on tvOS.
         core.setPlatformDefaults(preferHlsLive: true)
+        startCloudSync()
         subscriptions.append(watch(Changes.settings) { [weak self] _ in
             guard let self else { return }
             self.player.setLanguages(audio: self.core.settings.audioLanguage, subtitles: self.core.settings.subtitleLanguage)
+        })
+        // Playlists can also arrive from iCloud, or be deleted on another device.
+        subscriptions.append(watch(Changes.catalog) { [weak self] _ in
+            Task { await self?.refreshHasSources() }
         })
         subscriptions.append(core.watchSync { [weak self] states in
             #if DEBUG
@@ -41,6 +47,21 @@ final class AppModel: ObservableObject {
         core.refreshStale()
     }
 
+    private func startCloudSync() {
+        #if DEBUG
+        // Test launches reset the data or add fixtures; that mustn't reach the real iCloud account.
+        let testFlags: Set<String> = ["-resetData", "-demoXtream", "-demoM3U", "-debugPlay"]
+        guard testFlags.isDisjoint(with: ProcessInfo.processInfo.arguments) else { return }
+        SyncTestHooks.run(core)
+        #endif
+        // Observe first: the store reports what it fetched during launch through these.
+        cloud.observe(
+            changed: { [weak self] in self?.core.syncCloud() },
+            accountChanged: { [weak self] in self?.core.cloudAccountChanged() }
+        )
+        core.startCloudSync(cloud: cloud)
+    }
+
     #if DEBUG
     /// UI tests pass `-demoXtream <server>` to start with the local fixture server configured.
     /// `-demoName`/`-demoUser`/`-demoPass` override the fixture name and credentials and `-demoM3U <url>` adds a playlist,
@@ -50,6 +71,7 @@ final class AppModel: ObservableObject {
         // UI tests that need a first-run state pass `-resetData`.
         if args.contains("-resetData") {
             for s in (try? await core.sources()) ?? [] { try? await core.deleteSource(id: s.id) }
+            core.clearPin()
         }
         func value(_ flag: String) -> String? {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }

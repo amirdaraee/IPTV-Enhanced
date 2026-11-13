@@ -5,8 +5,7 @@ import TunerCore
 /// Keeps the backup copy of the user's own data (playlists with their passwords, favorites,
 /// progress, settings) in the Keychain. tvOS may purge Caches, where the database has to live,
 /// but never the Keychain, which also survives reinstalling the app.
-/// With a paid developer account, an iCloud key-value store can be added next to this so the
-/// data also follows the user to other Apple TVs (see docs/plan/IMPLEMENTATION_PLAN.md).
+/// The copy shared between the user's devices is in `CloudStore`.
 final class KeychainBackup: NSObject, UserDataBackup {
     private let item: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,

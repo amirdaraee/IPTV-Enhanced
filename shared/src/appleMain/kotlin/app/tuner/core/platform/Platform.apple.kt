@@ -15,7 +15,7 @@ import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.timeIntervalSince1970
 
-/** [backup] is implemented in Swift (the Keychain on tvOS; iCloud could replace it later). */
+/** [backup] is implemented in Swift (the Keychain). */
 actual class PlatformContext(val backup: app.tuner.core.UserDataBackup?) {
     constructor() : this(null)
 }

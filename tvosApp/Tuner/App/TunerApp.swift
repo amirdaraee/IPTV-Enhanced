@@ -22,6 +22,7 @@ struct TunerApp: App {
                 model.player.stop()
             case .active:
                 model.core.refreshStale()
+                model.core.syncCloud()
             default:
                 break
             }
