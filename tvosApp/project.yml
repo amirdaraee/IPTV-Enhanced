@@ -29,8 +29,8 @@ targets:
       path: Tuner/Info.plist
       properties:
         CFBundleDisplayName: IPTV Enhanced
-        CFBundleShortVersionString: "0.2.1"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "0.3.0"
+        CFBundleVersion: "6"
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
         # Landscape like a TV. Full screen because the guide doesn't fit iPad split view.
