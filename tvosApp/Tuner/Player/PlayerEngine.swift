@@ -108,7 +108,7 @@ final class PlayerEngine: ObservableObject {
         status = nil
         wantsPlayback = true
         backend = vlcURLs.contains(request.url) ? .vlc : .system
-        activeURL = backend == .vlc ? request.url : Self.preferredURL(request.url)
+        activeURL = backend == .vlc ? Self.vlcURL(request.url) : Self.preferredURL(request.url)
         prepare(request, startMs: request.startPositionMs)
     }
 
@@ -128,6 +128,14 @@ final class PlayerEngine: ObservableObject {
     static func preferredURL(_ url: String) -> String {
         guard url.range(of: #"/live/[^/]+/[^/]+/\d+\.ts(\?.*)?$"#, options: .regularExpression) != nil else { return url }
         return hlsVariant(url) ?? url
+    }
+
+    /// VLC plays Xtream live channels from their MPEG-TS form: one continuous stream. With the
+    /// HLS form it drifts ahead of the live playlist and reports the end every few minutes.
+    static func vlcURL(_ url: String) -> String {
+        guard url.range(of: #"/live/[^/]+/[^/]+/\d+\.m3u8(\?.*)?$"#, options: .regularExpression) != nil else { return url }
+        let parts = url.split(separator: "?", maxSplits: 1).map(String.init)
+        return String(parts[0].dropLast(5)) + ".ts" + (parts.count > 1 ? "?" + parts[1] : "")
     }
 
     private static func hlsVariant(_ url: String) -> String? {
@@ -270,6 +278,13 @@ final class PlayerEngine: ObservableObject {
             switchToVLC(request)
             return
         }
+        // The MPEG-TS form failed in VLC (some panels only allow HLS): use the original address.
+        if backend == .vlc, retries == 0, !vlcStarted, let current = activeURL, current != request.url {
+            activeURL = request.url
+            prepare(request, startMs: 0)
+            retries = 1
+            return
+        }
         // A raw .ts stream that AVPlayer rejected: try the panel's HLS variant once before backing off.
         if backend == .system, retries == 0, let current = activeURL, let hls = Self.hlsVariant(current), hls != current {
             activeURL = hls
@@ -399,7 +414,7 @@ extension PlayerEngine {
         clearItemObservers()
         player.replaceCurrentItem(with: nil)
         backend = .vlc
-        activeURL = request.url
+        activeURL = Self.vlcURL(request.url)
         retries = 0
         status = nil
         prepare(request, startMs: request.isLive ? 0 : request.startPositionMs)
