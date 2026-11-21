@@ -13,6 +13,7 @@ lifecycle = "2.11.0"
 navigation = "2.10.2"
 media3 = "1.11.1"
 coil = "3.6.3"
+guava = "33.7.2-android"
 compileSdk = "37"
 minSdk = "24"
 targetSdk = "36"
@@ -50,6 +51,7 @@ media3-ui-compose = { module = "androidx.media3:media3-ui-compose", version.ref 
 media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
