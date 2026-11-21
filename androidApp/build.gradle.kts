@@ -74,6 +74,10 @@ dependencies {
     implementation(libs.coil.network)
     implementation(libs.coroutines.android)
     debugImplementation(libs.compose.ui.tooling)
+    constraints {
+        // Media3 pulls in an older Guava; 33.7.2 fixes GHSA-xxph-c9ww-hj94.
+        implementation(libs.guava)
+    }
 }
 
 fun setting(property: String, env: String): String? =
